@@ -1,0 +1,3 @@
+int64 end_affector_control
+int64 linear_actuator_control
+int64 nir_trigger

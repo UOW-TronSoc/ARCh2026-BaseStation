@@ -1,0 +1,11 @@
+/* spacing groups inside card */
+.section{ gap:var(--space-md); }
+
+/* separators between stacked items */
+.radio-basic div+div,
+.battery-content div+div,
+.pitch-roll div+div{
+  margin-top:var(--space-xs);
+  padding-top:var(--space-xs);
+  border-top:1px solid rgba(255,255,255,.2);
+}

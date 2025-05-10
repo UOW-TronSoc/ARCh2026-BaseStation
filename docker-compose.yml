@@ -1,0 +1,73 @@
+services:
+  # ---------- ROS 2 base builder (unchanged) --------------------------------
+  ros2_base_builder:
+    image: arch2025/ros2-base
+    build:
+      context: ./basestationproject/ros2_ws
+      dockerfile: Dockerfile.ros2_base
+    command: ["true"]
+    restart: "no"
+
+  # ---------- Django --------------------------------------------------------
+  django:
+    network_mode: host          # <‑‑ THE KEY LINE
+    image: arch2025/django-ros2
+    build:
+      context: ./basestationproject
+      dockerfile: Dockerfile.django
+    depends_on:
+      - ros2_base_builder
+      - redis
+    container_name: django_server
+    command: >
+      bash -c "source /ros2_ws/install/setup.bash &&
+               python manage.py migrate --no-input &&
+               python manage.py runserver 0.0.0.0:8000"
+    environment:
+      ROS_DOMAIN_ID: "0"        # leave Fast DDS as default
+    volumes:
+      - ./basestationproject:/app
+    # remove *all* ports: and expose: blocks (host mode ignores them)
+
+  # ---------- FastAPI -------------------------------------------------------
+  fastapi:
+    network_mode: host
+    image: arch2025/fastapi-ros2
+    build:
+      context: ./basestationproject/fastapi_server
+      dockerfile: Dockerfile.fastapi
+    depends_on:
+      - ros2_base_builder
+      - redis
+    container_name: fastapi_server
+    command: >
+      bash -c "source /ros2_ws/install/setup.bash &&
+               uvicorn main:app --host 0.0.0.0 --port 8080 --reload"
+    environment:
+      ROS_DOMAIN_ID: "0"
+    volumes:
+      - ./basestationproject/fastapi_server:/app
+    # no ports mapping
+
+  # ---------- Front‑end & Redis (unchanged) ---------------------------------
+  frontend:
+    build:
+      context: ./basestationproject/frontend
+      dockerfile: Dockerfile.frontend
+    container_name: react_frontend
+    command: npm start
+    volumes:
+      - ./basestationproject/frontend:/app
+    ports:
+      - "3000:3000"
+    stdin_open: true
+    tty: true
+    depends_on:
+      - django
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: redis_server
+    restart: unless-stopped
+    ports:
+      - "6379:6379"

@@ -1,0 +1,20 @@
+.presetButton {
+  background-color: #2f2f2f;
+  color: white;
+  border: 1px solid #555;
+  padding: 0.5rem 1rem;
+  flex: 1 1 40%;
+  font-weight: 500;
+  border-radius: 8px;
+  transition: background 0.2s ease;
+}
+
+.presetButton:hover:not(:disabled) {
+  background-color: #444;
+  border-color: #666;
+}
+
+.presetButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

@@ -1,0 +1,82 @@
+  /* ========================================================================
+      Floating Navbar
+      ======================================================================== */
+  .floating-navbar {
+    position: sticky;
+    top: 0;
+    margin: var(--space-sm) var(--space-sm) 0;
+    z-index: 1000;
+    border-radius: var(--radius-md);
+    box-shadow: 0 var(--space-sm) var(--space-lg) rgba(0, 0, 0, 0.3);
+  }
+
+  /* ========================================================================
+          Navbar Links
+          ======================================================================== */
+  .navbar-nav .nav-link {
+    padding: var(--space-xs) var(--space-md) !important;
+    border-radius: var(--radius-pill);
+    background-color: transparent !important;
+    color: var(--nav-fg) !important;
+    transition: background-color 0.3s, color 0.3s;
+  }
+
+  .navbar-nav .nav-link:hover {
+    background-color: var(--nav-pill-bg) !important;
+    color: var(--nav-fg-hover) !important;
+  }
+
+  .navbar-nav .nav-link.active {
+    background-color: var(--nav-pill-bg) !important;
+    color: var(--nav-fg-active) !important;
+  }
+
+  /* ========================================================================
+      Battery Indicator
+      ======================================================================== */
+  /* Wrapper to align level + label */
+  .battery-wrapper {
+    display: flex;
+    align-items: center;
+  }
+
+  /* Outer battery shape */
+  .battery {
+    position: relative;
+    width: var(--battery-width);
+    height: var(--battery-height);
+    background: transparent;
+    border: 2px solid var(--battery-border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+  }
+
+  /* Positive terminal */
+  .battery::after {
+    content: '';
+    position: absolute;
+    right: calc(-1 * var(--battery-terminal-width));
+    top: calc((var(--battery-height) - var(--battery-terminal-height)) / 2);
+    width: var(--battery-terminal-width);
+    height: var(--battery-terminal-height);
+    background-color: var(--battery-border);
+    border-radius: 2px;
+  }
+
+  /* Fill level element */
+  .battery-level {
+    height: 100%;
+    transition: width 0.3s ease;
+  }
+
+  .battery-green {
+    background-color: var(--battery-green);
+  }
+
+  .battery-yellow {
+    background-color: var(--battery-yellow);
+  }
+
+  .battery-red {
+    background-color: var(--battery-red);
+  }

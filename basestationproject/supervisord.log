@@ -1,0 +1,98 @@
+2025-01-07 06:07:02,961 CRIT Supervisor is running as root.  Privileges were not dropped because no user is specified in the config file.  If you intend to run as root, you can set user=root in the config file to avoid this message.
+2025-01-07 06:07:02,963 INFO supervisord started with pid 1
+2025-01-07 06:07:03,986 INFO spawned: 'django' with pid 45
+2025-01-07 06:07:03,991 INFO spawned: 'fastapi' with pid 46
+2025-01-07 06:07:03,993 INFO spawnerr: can't find command 'npm'
+2025-01-07 06:07:03,997 INFO spawned: 'ros2_node' with pid 47
+2025-01-07 06:07:04,010 INFO exited: django (exit status 2; not expected)
+2025-01-07 06:07:04,608 INFO exited: fastapi (exit status 0; not expected)
+2025-01-07 06:07:05,611 INFO spawned: 'django' with pid 66
+2025-01-07 06:07:05,613 INFO spawned: 'fastapi' with pid 67
+2025-01-07 06:07:05,614 INFO spawnerr: can't find command 'npm'
+2025-01-07 06:07:05,614 INFO success: ros2_node entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-01-07 06:07:05,623 INFO exited: django (exit status 2; not expected)
+2025-01-07 06:07:06,117 INFO exited: fastapi (exit status 0; not expected)
+2025-01-07 06:07:08,131 INFO spawned: 'django' with pid 77
+2025-01-07 06:07:08,135 INFO spawned: 'fastapi' with pid 78
+2025-01-07 06:07:08,137 INFO spawnerr: can't find command 'npm'
+2025-01-07 06:07:08,153 INFO exited: django (exit status 2; not expected)
+2025-01-07 06:07:08,646 INFO exited: fastapi (exit status 0; not expected)
+2025-01-07 06:07:11,670 INFO spawned: 'django' with pid 88
+2025-01-07 06:07:11,673 INFO spawned: 'fastapi' with pid 89
+2025-01-07 06:07:11,674 INFO spawnerr: can't find command 'npm'
+2025-01-07 06:07:11,675 INFO gave up: react entered FATAL state, too many start retries too quickly
+2025-01-07 06:07:11,692 INFO exited: django (exit status 2; not expected)
+2025-01-07 06:07:12,174 INFO gave up: django entered FATAL state, too many start retries too quickly
+2025-01-07 06:07:12,175 INFO exited: fastapi (exit status 0; not expected)
+2025-01-07 06:07:13,179 INFO gave up: fastapi entered FATAL state, too many start retries too quickly
+2025-01-07 06:07:27,248 WARN received SIGTERM indicating exit request
+2025-01-07 06:07:27,249 INFO waiting for ros2_node to die
+2025-01-07 06:07:27,370 INFO stopped: ros2_node (exit status 1)
+2025-01-07 06:11:08,604 CRIT Supervisor is running as root.  Privileges were not dropped because no user is specified in the config file.  If you intend to run as root, you can set user=root in the config file to avoid this message.
+2025-01-07 06:11:08,605 INFO supervisord started with pid 1
+2025-01-07 06:11:09,617 INFO spawned: 'django' with pid 44
+2025-01-07 06:11:09,620 INFO spawned: 'fastapi' with pid 45
+2025-01-07 06:11:09,623 INFO spawned: 'react' with pid 46
+2025-01-07 06:11:09,626 INFO spawned: 'ros2_node' with pid 47
+2025-01-07 06:11:09,628 INFO exited: react (exit status 127; not expected)
+2025-01-07 06:11:09,631 INFO exited: django (exit status 2; not expected)
+2025-01-07 06:11:10,192 INFO exited: fastapi (exit status 0; not expected)
+2025-01-07 06:11:11,202 INFO spawned: 'django' with pid 66
+2025-01-07 06:11:11,207 INFO spawned: 'fastapi' with pid 67
+2025-01-07 06:11:11,210 INFO spawned: 'react' with pid 68
+2025-01-07 06:11:11,211 INFO success: ros2_node entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-01-07 06:11:11,214 INFO exited: react (exit status 127; not expected)
+2025-01-07 06:11:11,222 INFO exited: django (exit status 2; not expected)
+2025-01-07 06:11:11,713 INFO exited: fastapi (exit status 0; not expected)
+2025-01-07 06:11:13,727 INFO spawned: 'django' with pid 78
+2025-01-07 06:11:13,732 INFO spawned: 'fastapi' with pid 79
+2025-01-07 06:11:13,733 INFO spawned: 'react' with pid 80
+2025-01-07 06:11:13,736 INFO exited: react (exit status 127; not expected)
+2025-01-07 06:11:13,743 INFO exited: django (exit status 2; not expected)
+2025-01-07 06:11:14,231 INFO exited: fastapi (exit status 0; not expected)
+2025-01-07 06:11:17,255 INFO spawned: 'django' with pid 90
+2025-01-07 06:11:17,259 INFO spawned: 'fastapi' with pid 91
+2025-01-07 06:11:17,262 INFO spawned: 'react' with pid 92
+2025-01-07 06:11:17,266 INFO exited: react (exit status 127; not expected)
+2025-01-07 06:11:17,272 INFO gave up: react entered FATAL state, too many start retries too quickly
+2025-01-07 06:11:17,274 INFO exited: django (exit status 2; not expected)
+2025-01-07 06:11:17,760 INFO gave up: django entered FATAL state, too many start retries too quickly
+2025-01-07 06:11:17,761 INFO exited: fastapi (exit status 0; not expected)
+2025-01-07 06:11:18,769 INFO gave up: fastapi entered FATAL state, too many start retries too quickly
+2025-01-07 06:12:02,985 WARN received SIGTERM indicating exit request
+2025-01-07 06:12:02,987 INFO waiting for ros2_node to die
+2025-01-07 06:12:03,107 INFO stopped: ros2_node (exit status 1)
+2025-01-07 06:12:25,188 INFO Set uid to user 0 succeeded
+2025-01-07 06:12:25,189 INFO supervisord started with pid 1
+2025-01-07 06:12:26,200 INFO spawned: 'django' with pid 44
+2025-01-07 06:12:26,203 INFO spawned: 'fastapi' with pid 45
+2025-01-07 06:12:26,206 INFO spawned: 'react' with pid 46
+2025-01-07 06:12:26,209 INFO spawned: 'ros2_node' with pid 47
+2025-01-07 06:12:26,210 INFO exited: react (exit status 127; not expected)
+2025-01-07 06:12:26,219 INFO exited: django (exit status 2; not expected)
+2025-01-07 06:12:26,724 INFO exited: fastapi (exit status 0; not expected)
+2025-01-07 06:12:27,733 INFO spawned: 'django' with pid 66
+2025-01-07 06:12:27,736 INFO spawned: 'fastapi' with pid 67
+2025-01-07 06:12:27,740 INFO spawned: 'react' with pid 68
+2025-01-07 06:12:27,740 INFO success: ros2_node entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-01-07 06:12:27,744 INFO exited: react (exit status 127; not expected)
+2025-01-07 06:12:27,753 INFO exited: django (exit status 2; not expected)
+2025-01-07 06:12:28,240 INFO exited: fastapi (exit status 0; not expected)
+2025-01-07 06:12:30,259 INFO spawned: 'django' with pid 78
+2025-01-07 06:12:30,262 INFO spawned: 'fastapi' with pid 79
+2025-01-07 06:12:30,265 INFO spawned: 'react' with pid 80
+2025-01-07 06:12:30,270 INFO exited: react (exit status 127; not expected)
+2025-01-07 06:12:30,278 INFO exited: django (exit status 2; not expected)
+2025-01-07 06:12:30,762 INFO exited: fastapi (exit status 0; not expected)
+2025-01-07 06:12:33,781 INFO spawned: 'django' with pid 90
+2025-01-07 06:12:33,785 INFO spawned: 'fastapi' with pid 91
+2025-01-07 06:12:33,788 INFO spawned: 'react' with pid 92
+2025-01-07 06:12:33,791 INFO exited: react (exit status 127; not expected)
+2025-01-07 06:12:33,799 INFO gave up: react entered FATAL state, too many start retries too quickly
+2025-01-07 06:12:33,801 INFO exited: django (exit status 2; not expected)
+2025-01-07 06:12:34,292 INFO gave up: django entered FATAL state, too many start retries too quickly
+2025-01-07 06:12:34,292 INFO exited: fastapi (exit status 0; not expected)
+2025-01-07 06:12:35,297 INFO gave up: fastapi entered FATAL state, too many start retries too quickly
+2025-01-07 06:12:49,362 WARN received SIGTERM indicating exit request
+2025-01-07 06:12:49,364 INFO waiting for ros2_node to die
+2025-01-07 06:12:49,486 INFO stopped: ros2_node (exit status 1)

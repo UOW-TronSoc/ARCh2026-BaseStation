@@ -1,0 +1,17 @@
+.table {
+  color: white;
+}
+
+.table th,
+.table td {
+  font-size: 0.9rem;
+  vertical-align: middle;
+}
+
+.table th {
+  color: var(--accent);
+}
+
+.table tr td:first-child {
+  font-weight: 600;
+}

@@ -1,0 +1,31 @@
+/* ───────────────── :root design tokens ───────────────── */
+:root {
+  /* colors */
+  --bg-page:#1e1e1e;   --nav-bg:#2f2f2f;   --nav-fg:#bbb;
+  --nav-fg-hover:#fff; --nav-fg-active:#F8CE4D; --nav-pill-bg:#3A3A3A;
+
+  --battery-border:#F8CE4D; --battery-green:#33bd00;
+  --battery-yellow:#F8CE4D; --battery-red:#ff0000;
+
+  --card-alt-bg:#2F2F2F; --card-alt-fg:#f1f1f1;
+
+  --speed-card-bg:#2A2A2F; --speed-card-fg:#f8f9fa;
+
+  --slider-track-bg:rgba(255,255,255,.1);
+  --slider-thumb-bg:#f8f9fa;  --slider-zero-mark:rgba(255,255,255,.6);
+
+  /* scale, radii */
+  --space-xs:.25rem; --space-sm:.5rem; --space-md:1rem;
+  --space-lg:1.5rem; --space-xl:2rem;
+
+  --radius-sm:.25rem; --radius-md:.5rem; --radius-pill:999px;
+
+  /* battery & slider dims (shared) */
+  --battery-width:60px; --battery-height:25px;
+  --battery-terminal-width:8px; --battery-terminal-height:12px;
+
+  --slider-length:150px; --slider-thickness:24px;
+  --thumb-length:48px;   --thumb-width:24px;  --thumb-radius:12px;
+  --accent: #F8CE4D;
+  --accent-mode: #ffdc75;
+}

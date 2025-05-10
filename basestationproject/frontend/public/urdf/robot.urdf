@@ -1,0 +1,208 @@
+<?xml version="1.0"?>
+<!-- Generated using onshape-to-robot -->
+<!-- Onshape
+https://cad.onshape.com/documents/309dad1fcf96402f6f71fc39/w/c35272557fbbeae8da39f167/e/db58ff6c4be8431c47a43de3 -->
+<robot name="mo">
+  <!-- Connection to world frame -->
+  <link name="world" />
+  <joint name="world_to_base" type="fixed">
+    <parent link="world" />
+    <child link="base" />
+    <origin xyz="0 0 0" rpy="0 0 0" />
+  </joint>
+  <!-- Link base -->
+  <link name="base">
+    <inertial>
+      <origin xyz="-2.16227e-08 0.00395376 -0.020406" rpy="0 0 0" />
+      <mass value="1.5" />
+      <inertia ixx="0.00231197" ixy="5.53737e-08" ixz="-1.38101e-09" iyy="0.00883987"
+        iyz="-9.13697e-05" izz="0.00983151" />
+    </inertial>
+    <!-- Part base -->
+    <visual>
+      <origin xyz="0 -3.46945e-18 -0.01" rpy="1.5708 -0 0" />
+      <geometry>
+        <mesh filename="package://arm_description/meshes/base.stl" />
+      </geometry>
+      <material name="base_material">
+        <color rgba="0.647059 0.647059 0.647059 1.0" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 -3.46945e-18 -0.01" rpy="1.5708 -0 0" />
+      <geometry>
+        <mesh filename="package://arm_description/meshes/base.stl" />
+      </geometry>
+    </collision>
+  </link>
+  <!-- Link link1 -->
+  <link name="link1">
+    <inertial>
+      <origin xyz="-0.00578817 -0.000117457 -0.0870587" rpy="0 0 0" />
+      <mass value="1" />
+      <inertia ixx="0.00346557" ixy="-2.11688e-06" ixz="-0.000243462" iyy="0.00301399"
+        iyz="-2.48279e-06" izz="0.00131141" />
+    </inertial>
+    <!-- Part link1 -->
+    <visual>
+      <origin xyz="-0.2088 0.189682 -0.278406" rpy="3.14159 -0.00114135 -6.48891e-27" />
+      <geometry>
+        <mesh filename="package://arm_description/meshes/link1.stl" />
+      </geometry>
+      <material name="link1_material">
+        <color rgba="0.231373 0.380392 0.705882 1.0" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.2088 0.189682 -0.278406" rpy="3.14159 -0.00114135 -6.48891e-27" />
+      <geometry>
+        <mesh filename="package://arm_description/meshes/link1.stl" />
+      </geometry>
+    </collision>
+  </link>
+  <!-- Link link2 -->
+  <link name="link2">
+    <inertial>
+      <origin xyz="-0.168342 -0.000183138 0.0196951" rpy="0 0 0" />
+      <mass value="3" />
+      <inertia ixx="0.00710836" ixy="-5.85998e-05" ixz="0.000438946" iyy="0.0548524"
+        iyz="2.8723e-05" izz="0.0548111" />
+    </inertial>
+    <!-- Part link2 -->
+    <visual>
+      <origin xyz="-0.163294 -0.190051 -0.191365" rpy="-1.71323e-12 -1.56965 -4.62554e-24" />
+      <geometry>
+        <mesh filename="package://arm_description/meshes/link2.stl" />
+      </geometry>
+      <material name="link2_material">
+        <color rgba="0.980392 0.713725 0.00392157 1.0" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.163294 -0.190051 -0.191365" rpy="-1.71323e-12 -1.56965 -4.62554e-24" />
+      <geometry>
+        <mesh filename="package://arm_description/meshes/link2.stl" />
+      </geometry>
+    </collision>
+  </link>
+  <!-- Link link3 -->
+  <link name="link3">
+    <inertial>
+      <origin xyz="-0.1132 -0.000619866 0.0120358" rpy="0 0 0" />
+      <mass value="2.5" />
+      <inertia ixx="0.0106994" ixy="-0.000111264" ixz="-0.000249056" iyy="0.0350598"
+        iyz="9.76657e-05" izz="0.029047" />
+    </inertial>
+    <!-- Part link3 -->
+    <visual>
+      <origin xyz="0.159645 0.189682 0.222566" rpy="3.14159 1.56965 3.40615e-23" />
+      <geometry>
+        <mesh filename="package://arm_description/meshes/link3.stl" />
+      </geometry>
+      <material name="link3_material">
+        <color rgba="0.615686 0.811765 0.929412 1.0" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.159645 0.189682 0.222566" rpy="3.14159 1.56965 3.40615e-23" />
+      <geometry>
+        <mesh filename="package://arm_description/meshes/link3.stl" />
+      </geometry>
+    </collision>
+  </link>
+  <!-- Link link4 -->
+  <link name="link4">
+    <inertial>
+      <origin xyz="0.00225826 4.42852e-09 -0.0700065" rpy="0 0 0" />
+      <mass value="0.5" />
+      <inertia ixx="0.00096297" ixy="-8.67184e-12" ixz="-7.35389e-09" iyy="0.000946322"
+        iyz="-3.11225e-10" izz="0.000280194" />
+    </inertial>
+    <!-- Part link4 -->
+    <visual>
+      <origin xyz="0.485145 0.189682 0.1388" rpy="-3.14159 1.56965 -4.52656e-23" />
+      <geometry>
+        <mesh filename="package://arm_description/meshes/link4.stl" />
+      </geometry>
+      <material name="link4_material">
+        <color rgba="0.972549 0.529412 0.00392157 1.0" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.485145 0.189682 0.1388" rpy="-3.14159 1.56965 -4.52656e-23" />
+      <geometry>
+        <mesh filename="package://arm_description/meshes/link4.stl" />
+      </geometry>
+    </collision>
+  </link>
+  <!-- Link link5 -->
+  <link name="link5">
+    <inertial>
+      <origin xyz="-0.00177372 -0.00319097 -0.0723733" rpy="0 0 0" />
+      <mass value="2.5" />
+      <inertia ixx="0.0168033" ixy="-0.000181348" ixz="-3.49287e-05" iyy="0.0203016"
+        iyz="-0.000201285" izz="0.00604047" />
+    </inertial>
+    <!-- Part link5 -->
+    <visual>
+      <origin xyz="0.195596 0.056999 0.0511451" rpy="3.14159 0.00616622 1.81136e-31" />
+      <geometry>
+        <mesh filename="package://arm_description/meshes/link5.stl" />
+      </geometry>
+      <material name="link5_material">
+        <color rgba="0.866667 0.321569 0.156863 1.0" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.195596 0.056999 0.0511451" rpy="3.14159 0.00616622 1.81136e-31" />
+      <geometry>
+        <mesh filename="package://arm_description/meshes/link5.stl" />
+      </geometry>
+    </collision>
+  </link>
+  <!-- Joint from link4 to link5 -->
+  <joint name="joint5" type="revolute">
+    <origin xyz="-0.0217753 1.04736e-08 -0.07" rpy="4.80986e-07 1.5708 0" />
+    <parent link="link4" />
+    <child link="link5" />
+    <axis xyz="0 0 1" />
+    <limit effort="1000" velocity="600" lower="-62.8319" upper="62.8319" />
+    <joint_properties friction="0.5" />
+  </joint>
+  <!-- Joint from link3 to link4 -->
+  <joint name="joint4" type="revolute">
+    <origin xyz="-0.3255 6.49697e-08 0.0838538" rpy="-8.10997e-16 -2.09121e-15 7.10561e-13" />
+    <parent link="link3" />
+    <child link="link4" />
+    <axis xyz="0 0 1" />
+    <limit effort="1000" velocity="600" lower="-62.8319" upper="62.8319" />
+    <joint_properties friction="0.5" />
+  </joint>
+  <!-- Joint from link2 to link3 -->
+  <joint name="joint3" type="revolute">
+    <origin xyz="-0.322939 -0.00036863 0.031201" rpy="3.14159 1.29235e-16 -1.29031e-12" />
+    <parent link="link2" />
+    <child link="link3" />
+    <axis xyz="0 0 1" />
+    <limit effort="1000" velocity="600" lower="-62.8319" upper="62.8319" />
+    <joint_properties friction="0.5" />
+  </joint>
+  <!-- Joint from link1 to link2 -->
+  <joint name="joint2" type="revolute">
+    <origin xyz="-0.0174348 -0.000368354 -0.115112" rpy="3.14159 -1.5708 0" />
+    <parent link="link1" />
+    <child link="link2" />
+    <axis xyz="0 0 1" />
+    <limit effort="1000" velocity="600" lower="-62.8319" upper="62.8319" />
+    <joint_properties friction="0.5" />
+  </joint>
+  <!-- Joint from base to link1 -->
+  <joint name="joint1" type="revolute">
+    <origin xyz="0 0 5.55112e-17" rpy="-3.14159 -1.17181e-19 1.2804e-26" />
+    <parent link="base" />
+    <child link="link1" />
+    <axis xyz="0 0 1" />
+    <limit effort="1000" velocity="600" lower="-62.8319" upper="62.8319" />
+    <joint_properties friction="0.5" />
+  </joint>
+</robot>

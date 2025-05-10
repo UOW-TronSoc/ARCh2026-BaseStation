@@ -1,0 +1,296 @@
+/* ========================================================================
+  :root — Custom Properties
+  ======================================================================== */
+:root {
+  /* colors */
+  --bg-page:            #1e1e1e;
+  --nav-bg:             #2f2f2f;
+  --nav-fg:             #bbb;
+  --nav-fg-hover:       #fff;
+  --nav-fg-active:      #F8CE4D;
+  --nav-pill-bg:        #3A3A3A;
+
+  --battery-border:     #F8CE4D;
+  --battery-green:      #33bd00;
+  --battery-yellow:     #F8CE4D;
+  --battery-red:        #ff0000;
+
+  --card-alt-bg:        #2F2F2F;
+  --card-alt-fg:        #f1f1f1;
+
+  --speed-card-bg:      #2A2A2F;
+  --speed-card-fg:      #f8f9fa;
+
+  --slider-track-bg:    rgba(255,255,255,0.1);
+  --slider-thumb-bg:    #f8f9fa;
+  --slider-zero-mark:   rgba(255,255,255,0.6);
+
+  /* spacing scale */
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+
+  /* border radius */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-pill: 999px;
+
+  /* battery dimensions */
+  --battery-width:          60px;
+  --battery-height:         25px;
+  --battery-terminal-width: 8px;
+  --battery-terminal-height:12px;
+
+  /* slider dimensions */
+  --slider-length:     150px;
+  --slider-thickness:  24px;
+  --thumb-length:      48px;
+  --thumb-width:       24px;
+  --thumb-radius:      12px;
+}
+
+/* ========================================================================
+    Base Styles
+    ======================================================================== */
+body {
+  background-color: var(--bg-page);
+}
+
+/* ========================================================================
+    Floating Navbar
+    ======================================================================== */
+.floating-navbar {
+  position: sticky;
+  top: 0;
+  margin: var(--space-sm) var(--space-sm) 0;
+  z-index: 1000;
+  border-radius: var(--radius-md);
+  box-shadow: 0 var(--space-sm) var(--space-lg) rgba(0,0,0,0.3);
+}
+
+/* ========================================================================
+    Navbar Links
+    ======================================================================== */
+.navbar-nav .nav-link {
+  padding: var(--space-xs) var(--space-md) !important;
+  border-radius: var(--radius-pill);
+  background-color: transparent !important;
+  color: var(--nav-fg) !important;
+  transition: background-color 0.3s, color 0.3s;
+}
+.navbar-nav .nav-link:hover {
+  background-color: var(--nav-pill-bg) !important;
+  color: var(--nav-fg-hover) !important;
+}
+.navbar-nav .nav-link.active {
+  background-color: var(--nav-pill-bg) !important;
+  color: var(--nav-fg-active) !important;
+}
+
+/* ========================================================================
+    Battery Indicator
+    ======================================================================== */
+/* Wrapper to align level + label */
+.battery-wrapper {
+  display: flex;
+  align-items: center;
+}
+
+/* Outer battery shape */
+.battery {
+  position: relative;
+  width: var(--battery-width);
+  height: var(--battery-height);
+  background: transparent;
+  border: 2px solid var(--battery-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+/* Positive terminal */
+.battery::after {
+  content: '';
+  position: absolute;
+  right: calc(-1 * var(--battery-terminal-width));
+  top: calc((var(--battery-height) - var(--battery-terminal-height)) / 2);
+  width: var(--battery-terminal-width);
+  height: var(--battery-terminal-height);
+  background-color: var(--battery-border);
+  border-radius: 2px;
+}
+
+/* Fill level element */
+.battery-level {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+.battery-green  { background-color: var(--battery-green); }
+.battery-yellow { background-color: var(--battery-yellow); }
+.battery-red    { background-color: var(--battery-red); }
+
+/* ========================================================================
+    Card (Right-hand Column)
+    ======================================================================== */
+.card.col-lg-4 {
+  background-color: var(--card-alt-bg) !important;
+  color: var(--card-alt-fg);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+}
+
+/* ========================================================================
+    Section Spacing & Headers
+    ======================================================================== */
+.radio-content,
+.battery-content,
+.pitch-roll {
+  gap: var(--space-md);
+}
+
+.header {
+  color: var(--nav-fg-active);
+}
+
+/* ========================================================================
+    Separators Between Items
+    ======================================================================== */
+.radio-basic div + div,
+.battery-content div + div,
+.pitch-roll div + div {
+  margin-top: var(--space-xs);
+  padding-top: var(--space-xs);
+  border-top: 1px solid rgba(255,255,255,0.2);
+}
+
+/* ========================================================================
+    Vertical Slider Container
+    ======================================================================== */
+.slider-container {
+  position: relative;
+  height: var(--slider-length);
+  width: var(--slider-thickness);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.slider-container::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 14px;
+  height: 2px;
+  background: var(--slider-zero-mark);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  border-radius: 1px;
+}
+
+/* ========================================================================
+    Vertical Slider Track & Thumb
+    ======================================================================== */
+.slider-vertical {
+  -webkit-appearance: none;
+  appearance: none;
+  width: var(--slider-length);
+  height: var(--slider-thickness);
+  transform: rotate(-90deg);
+  transform-origin: center;
+  background: transparent;
+  outline: none;
+  margin: 0;
+}
+
+.slider-vertical::-webkit-slider-runnable-track {
+  height: var(--slider-thickness);
+  background: var(--slider-track-bg);
+  border-radius: calc(var(--slider-thickness) / 2);
+}
+
+.slider-vertical::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: var(--thumb-width);
+  height: var(--thumb-length);
+  border-radius: var(--thumb-radius);
+  background: var(--slider-thumb-bg);
+  margin-top: calc(-1 * (var(--thumb-length) - var(--slider-thickness)) / 2);
+  cursor: pointer;
+  border: none;
+}
+
+.slider-vertical::-moz-range-track {
+  height: var(--slider-thickness);
+  background: var(--slider-track-bg);
+  border-radius: calc(var(--slider-thickness) / 2);
+}
+
+.slider-vertical::-moz-range-thumb {
+  width: var(--thumb-width);
+  height: var(--thumb-length);
+  border-radius: var(--thumb-radius);
+  background: var(--slider-thumb-bg);
+  cursor: pointer;
+  border: none;
+}
+
+.slider-vertical:focus {
+  outline: none;
+}
+
+/* ========================================================================
+    Speed Control Dial
+    ======================================================================== */
+.speed-card {
+  background: var(--speed-card-bg);
+  color: var(--speed-card-fg);
+}
+
+.speed-svg-container {
+  aspect-ratio: 1/1;
+  position: relative;
+  width: 100%;
+}
+
+.speed-svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-135deg);
+  transform-origin: center;
+}
+
+.slider-track {
+  fill: none;
+  stroke: var(--slider-track-bg);
+  stroke-width: 20;
+  stroke-linecap: butt;
+}
+
+.slider-progress {
+  fill: none;
+  stroke: var(--speed-card-fg);
+  stroke-width: 20;
+  stroke-linecap: round;
+  stroke-dasharray: 212 424;
+}
+
+.slider-thumb {
+  fill: var(--speed-card-fg);
+}
+
+.slider-value {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  pointer-events: none;
+}
+
+.slider-labels {
+  font-size: 0.875rem;
+  color: var(--speed-card-fg);
+}

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Script Manager</title>
+</head>
+<body>
+    <h1>Test Script Manager</h1>
+    <button onclick="location.href='/start-all'">Start All</button>
+    <button onclick="location.href='/stop-all'">Stop All</button>
+    <table border="1" cellpadding="10">
+        <thead>
+            <tr>
+                <th>Script Name</th>
+                <th>Status</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for name, state in status.items() %}
+            <tr>
+                <td>{{ name }}</td>
+                <td>{{ state }}</td>
+                <td>
+                    {% if state == 'Running' %}
+                        <button onclick="location.href='/stop/{{ name }}'">Stop</button>
+                    {% else %}
+                        <button onclick="location.href='/start/{{ name }}'">Start</button>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>
