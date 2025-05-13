@@ -175,7 +175,6 @@ class DrivetrainFeedbackSubscriber(Node):
             logging.error(f"Error processing drivetrain feedback: {e}")
 
 
-from django.http import JsonResponse
 
 def get_drivetrain_feedback(request):
     # Retrieve the latest drivetrain feedback data

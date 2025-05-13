@@ -3,7 +3,7 @@ import "bootstrap/dist/css/bootstrap.min.css";
 import "./CameraFeed.css";
 
 const CameraFeed = () => {
-  const CAMERA_COUNT = 5;
+  const CAMERA_COUNT = 10;
   const [activeCameras, setActiveCameras] = useState(Array(CAMERA_COUNT).fill(false));
   const [imageSrcs, setImageSrcs] = useState(Array(CAMERA_COUNT).fill(""));
 
