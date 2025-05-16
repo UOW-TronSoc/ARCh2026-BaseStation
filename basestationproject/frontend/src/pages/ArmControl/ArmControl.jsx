@@ -16,6 +16,7 @@ export default function ArmControl() {
 
   // Gamepad + Arm Control State
   const [jointAngles, setJointAngles] = useState([0, 0, 0, 0, 0, -127]);
+  const [jointVelocities, setJointVelocities] = useState([0, 0, 0, 0, 0, 0]);
   const [selectedJoint, setSelectedJoint] = useState(null);
   const [jointSpeedOverrides, setJointSpeedOverrides] = useState([1, 1, 1]);
 
@@ -32,8 +33,17 @@ export default function ArmControl() {
     const fetchArmFeedback = async () => {
       try {
         const res = await axios.get(`${API_BASE}/arm-feedback/`);
-        if (res.data?.joint_positions) {
+        // if (res.data?.joint_positions) {
+        //   setJointAngles(res.data.joint_positions.slice(0, 6));
+        // }
+
+        if (Array.isArray(res.data.joint_positions)) {
           setJointAngles(res.data.joint_positions.slice(0, 6));
+          setJointVelocities(
+            Array.isArray(res.data.joint_velocities)
+              ? res.data.joint_velocities.slice(0, 6)
+              : [0, 0, 0, 0, 0, 0]
+          );
         }
       } catch (err) {
         console.error("❌ Failed to fetch arm feedback:", err.message);
@@ -41,7 +51,7 @@ export default function ArmControl() {
     };
 
     fetchArmFeedback();
-    const interval = setInterval(fetchArmFeedback, 1000);
+    const interval = setInterval(fetchArmFeedback, 33);
     return () => clearInterval(interval);
   }, []);
 
@@ -57,51 +67,58 @@ export default function ArmControl() {
   //   }
   // };
 
-  const sendArmCommand = async (angles) => {
+  const sendArmCommand = async (positions, velocities) => {
     try {
       await axios.post(`${API_BASE}/arm-command/`, {
-        joint_positions: angles,
+        joint_positions: positions,
+        joint_velocities: velocities,
       });
     } catch (err) {
       console.error("❌ Failed to send arm command:", err.message);
     }
   };
-  
+
+
   const handleSimIncrement = (mode, target, value) => {
     if (mode !== "joint") return;
-  
-    const jointIndex = {
-      Theta1: 0,
-      Theta2: 1,
-      Theta3: 2,
-      Theta4: 3,
-      Theta5: 4,
-      EE: 5,
-    }[target];
-  
-    if (jointIndex === undefined) return;
-  
-    setJointAngles((prev) => {
-      const updated = [...prev];
-      updated[jointIndex] += value;
-      return updated;
+    const idxMap = { Theta1:0, Theta2:1, Theta3:2, Theta4:3, Theta5:4, EE:5 };
+    const i = idxMap[target];
+    if (i === undefined) return;
+
+    setJointAngles(prev => {
+      const next = [...prev];
+      next[i] += value;
+
+      // build a matching velocities array:
+      const nextVels = [...jointVelocities];
+      // e.g. use the absolute step as a proxy for speed,
+      // or just carry over the old velocity:
+      nextVels[i] = Math.max(Math.abs(value), nextVels[i]);
+
+      // push both to ROS:
+      sendArmCommand(next, nextVels);
+
+      // also update your local velocity state so future calls keep it:
+      setJointVelocities(nextVels);
+
+      return next;
     });
   };
-  
+
 
   // Gamepad polling logic
   useEffect(() => {
     const pollGamepad = () => {
       const gp = navigator.getGamepads()[0];
       if (!gp) return;
-  
+
       const rt = gp.axes[5] > 0.5;
       const lt = gp.axes[4] > 0.5;
-  
+
       const y = gp.buttons[3]?.pressed;
       const x = gp.buttons[2]?.pressed;
       const a = gp.buttons[0]?.pressed;
-  
+
       if (y && !yButtonRef.current) {
         setSelectedJoint((prev) => (prev === null ? 0 : (prev + 1) % 6));
       }
@@ -111,13 +128,13 @@ export default function ArmControl() {
       if (a && !aButtonRef.current) {
         setSelectedJoint(0);
       }
-  
+
       yButtonRef.current = y;
       xButtonRef.current = x;
       aButtonRef.current = a;
-  
+
       const newAngles = [...jointAngles];
-  
+
       if (selectedJoint !== null) {
         if (selectedJoint < 3) {
           const speed = jointSpeedOverrides[selectedJoint];
@@ -127,16 +144,15 @@ export default function ArmControl() {
         } else {
           newAngles[selectedJoint] = rt ? 255 : lt ? 0 : -127;
         }
-  
+
         // setJointAngles(newAngles); //controller endpoints
         sendArmCommand(newAngles);
       }
     };
-  
+
     const interval = setInterval(pollGamepad, 50);
     return () => clearInterval(interval);
   }, [selectedJoint, jointAngles, jointSpeedOverrides]);
-  
 
   // ──────────────────────────────────────────────────────────────
 
@@ -153,7 +169,10 @@ export default function ArmControl() {
           />
         </div>
         <div className="col-lg-4 mt-3 mt-lg-0">
-          <IncrementalMovementCard api={API_BASE} onIncrement={handleSimIncrement}/>
+          <IncrementalMovementCard
+            api={API_BASE}
+            onIncrement={handleSimIncrement}
+          />
         </div>
       </div>
 
@@ -184,20 +203,35 @@ export default function ArmControl() {
 
       <div className="row gx-4">
         <div className="col-12 my-4">
-          <div style={{ height: "500px", background: "#111", borderRadius: "10px" }}>
-            <ArmSim jointAngles={jointAngles} />
+          <div
+            style={{
+              height: "500px",
+              background: "#111",
+              borderRadius: "10px",
+            }}
+          >
+            <ArmSim
+              jointAngles={jointAngles}
+              jointVelocities={jointVelocities}
+            />
           </div>
         </div>
       </div>
 
       <div className="row">
         <div className="card mt-3">
-          <div className="card-header bg-primary text-white">Select Arm Joint</div>
+          <div className="card-header bg-primary text-white">
+            Select Arm Joint
+          </div>
           <div className="card-body text-center">
             {[0, 1, 2, 3, 4, 5].map((joint) => (
               <button
                 key={joint}
-                className={`btn mx-1 ${selectedJoint === joint ? "btn-primary" : "btn-outline-primary"}`}
+                className={`btn mx-1 ${
+                  selectedJoint === joint
+                    ? "btn-primary"
+                    : "btn-outline-primary"
+                }`}
                 onClick={() => setSelectedJoint(joint)}
               >
                 {joint === 5 ? "Gripper" : `Joint ${joint + 1}`}

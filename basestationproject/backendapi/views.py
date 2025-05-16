@@ -428,18 +428,33 @@ class ArmCommandPublisher(Node):
         except Exception as e:
             logging.error(f"Error initializing arm command publisher: {e}")
 
-    def publish_arm_command(self, joint_positions):
+    """def publish_arm_command(self, joint_positions, joint_velocities):
         try:
-            float_positions = [float(p) if isinstance(p, (int, float)) else 0.0 for p in joint_positions]
+            # float_positions = [float(p) if isinstance(p, (int, float)) else 0.0 for p in joint_positions]
+            # float_positions  = [float(p) for p in joint_positions]
+            # float_velocities = [float(v) for v in joint_velocities]  # however you pass it in
 
             arm_msg = JointState()
             arm_msg.position = float_positions
+            arm_msg.velocity = float_velocities
             arm_msg.name = [f"joint_{i}" for i in range(len(float_positions))]
             arm_msg.header.stamp = self.get_clock().now().to_msg()
 
             self.publisher.publish(arm_msg)
             self.get_logger().info(f"Published to /arm_command: {float_positions}")
 
+        except Exception as e:
+            logging.error(f"Error publishing arm command: {e}")"""
+    def publish_arm_command(self, joint_positions, joint_velocities):
+        try:
+            msg = JointState()
+            msg.position = [float(p) for p in joint_positions]
+            msg.velocity = [float(v) for v in joint_velocities]
+            msg.name     = [f"joint_{i}" for i in range(6)]
+            msg.header.stamp = self.get_clock().now().to_msg()
+
+            self.publisher.publish(msg)
+            self.get_logger().info(f"Published positions {msg.position} with velocities {msg.velocity}")
         except Exception as e:
             logging.error(f"Error publishing arm command: {e}")
 
@@ -463,38 +478,64 @@ def get_arm_feedback(request):
         names = feedback.get("joint_names", [f"θ{i+1}" for i in range(len(positions))])
         velocities = feedback.get("joint_velocities", [0.0] * len(positions))
 
-        joints = [
-            {"name": names[i], "position": positions[i], "velocity": velocities[i]}
-            for i in range(len(positions))
-        ]
+        # joints = [
+        #     {"name": names[i], "position": positions[i], "velocity": velocities[i]}
+        #     for i in range(len(positions))
+        # ]
 
-        return JsonResponse({"joints": joints})
+        # return JsonResponse({"joints": joints})
+        
+        return JsonResponse({
+         "joint_positions": positions,
+         "joint_velocities": velocities,
+         "joint_names": names
+       })
+
 
     except Exception as e:
         logging.error(f"Error retrieving arm feedback: {e}")
         return JsonResponse({"error": "Failed to retrieve feedback"}, status=500)
 
+last_vels = [0.0]*6
 # --- API: Send Arm Command ---
 @csrf_exempt
 def send_arm_command(request):
-    if request.method == "POST":
-        try:
-            data = json.loads(request.body)
-            joint_positions = data.get("joint_positions", [])
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
 
-            if len(joint_positions) != 6:
-                return JsonResponse({"error": "Expected 6 joint positions (including gripper)"}, status=400)
+    try:
+        payload = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-            arm_command_node.publish_arm_command(joint_positions)
-            return JsonResponse({"message": "Command sent successfully!"})
-        except json.JSONDecodeError:
-            logging.error("Invalid JSON received.")
-            return JsonResponse({"error": "Invalid JSON"}, status=400)
-        except Exception as e:
-            logging.error(f"Unexpected error processing arm command: {e}")
-            return JsonResponse({"error": "Internal server error"}, status=500)
+    # 1️⃣ Validate positions
+    jp = payload.get("joint_positions")
+    if not isinstance(jp, list):
+        return JsonResponse({"error": "joint_positions must be a list of 6 numbers"}, status=400)
+    if len(jp) != 6:
+        return JsonResponse({"error": "Expected 6 joint positions"}, status=400)
 
-    return JsonResponse({"error": "Invalid request method"}, status=405)
+    # 2️⃣ Validate velocities (optional)
+    jv = payload.get("joint_velocities")
+    if jv is None:
+        # fallback to zeros if you didn’t send any
+        jv = last_vels
+
+    elif not isinstance(jv, list):
+        return JsonResponse({"error": "joint_velocities must be a list of 6 numbers"}, status=400)
+    elif len(jv) != 6:
+        return JsonResponse({"error": "Expected 6 joint velocities"}, status=400)
+    else:
+        last_vels[:] = jv
+
+    # 3️⃣ Publish!
+    try:
+        arm_command_node.publish_arm_command(jp, jv)
+        return JsonResponse({"message": "Command sent successfully!"})
+    except Exception as e:
+        logging.error(f"Error publishing arm command: {e}")
+        return JsonResponse({"error": "Internal server error"}, status=500)
+
 
 
 class ArmPresetPublisher(Node):

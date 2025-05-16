@@ -1,18 +1,16 @@
-// src/components/ArmSim/ArmSim.jsx
 import React, { useRef, useEffect } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import URDFLoader from "urdf-loader";
+import { Box3, Vector3 } from "three";
 
-function ArmScene({ jointAngles }) {
+function ArmScene({ jointAngles, controlsRef }) {
   const robotRef = useRef();
   const { scene } = useThree();
 
   useEffect(() => {
     const loader = new URDFLoader();
-    loader.packages = {
-      arm_description: "/urdf"
-    };
+    loader.packages = { arm_description: "/urdf" };
 
     loader.load("/urdf/robot.urdf", (robot) => {
       robotRef.current = robot;
@@ -21,19 +19,24 @@ function ArmScene({ jointAngles }) {
         obj.receiveShadow = true;
       });
       scene.add(robot);
+
+      // center orbit on robot's bounding-box center
+      const box = new Box3().setFromObject(robot);
+      const center = new Vector3();
+      box.getCenter(center);
+      if (controlsRef.current) {
+        controlsRef.current.target.copy(center);
+        controlsRef.current.update();
+      }
     });
-  }, [scene]);
+  }, [scene, controlsRef]);
 
   useFrame(() => {
     if (!robotRef.current) return;
-    const jointNames = Object.keys(robotRef.current.joints).reverse();
-    // reversing the joints control //gripper doesn't work
-
-    jointNames.forEach((name, i) => {
-      const joint = robotRef.current.joints[name];
-      if (joint && jointAngles[i] !== undefined) {
-        joint.setJointValue((jointAngles[i] * Math.PI) / 180);
-      }
+    const names = Object.keys(robotRef.current.joints).reverse();
+    names.forEach((name, i) => {
+      const rad = (jointAngles[i] * Math.PI) / 180;
+      robotRef.current.joints[name].setJointValue(rad);
     });
   });
 
@@ -41,12 +44,26 @@ function ArmScene({ jointAngles }) {
 }
 
 export default function ArmSim({ jointAngles }) {
+  const controlsRef = useRef();
+
   return (
-    <Canvas shadows camera={{ position: [2, 2, 4], fov: 50 }}>
+    <Canvas
+      shadows
+      camera={{ position: [2, 2, 4], fov: 50 }}
+      onPointerDown={(e) => {
+        if (controlsRef.current) {
+          controlsRef.current.target.copy(e.point);
+          controlsRef.current.update();
+        }
+      }}
+    >
       <ambientLight intensity={0.6} />
       <directionalLight position={[5, 5, 5]} castShadow />
-      <OrbitControls />
-      <ArmScene jointAngles={jointAngles} />
+
+      {/* attach controlsRef so we can manipulate the pivot */}
+      <OrbitControls ref={controlsRef} />
+
+      <ArmScene jointAngles={jointAngles} controlsRef={controlsRef} />
     </Canvas>
   );
 }
