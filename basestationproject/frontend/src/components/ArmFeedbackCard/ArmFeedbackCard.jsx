@@ -16,7 +16,7 @@ export default function ArmFeedbackCard({ api }) {
 
   useEffect(() => {
     fetchFeedback();
-    const interval = setInterval(fetchFeedback, 33); // update every second
+    const interval = setInterval(fetchFeedback, 33); // update afap
     return () => clearInterval(interval);
   }, []);
 

@@ -128,7 +128,7 @@ export default function ArmControl() {
           newAngles[selectedJoint] = rt ? 255 : lt ? 0 : -127;
         }
   
-        setJointAngles(newAngles);
+        // setJointAngles(newAngles); //controller endpoints
         sendArmCommand(newAngles);
       }
     };

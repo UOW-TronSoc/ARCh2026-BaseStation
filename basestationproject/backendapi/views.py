@@ -374,10 +374,9 @@ def get_rover_logs(request):
 
 # ----------------------------
 
-ARM_COMMAND_TOPIC = "arm_command"
-# GRIPPER_COMMAND_TOPIC = "gripper_command"
-# ARM_FEEDBACK_TOPIC = "armgripper"
-# ARM_FEEDBACK_TOPIC = "arm_feedback" # dont need 
+ARM_COMMAND_TOPIC  = "arm_command"
+ARM_FEEDBACK_TOPIC = ARM_COMMAND_TOPIC   # echo-mode
+
 
 
 class ArmFeedbackSubscriber(Node):
@@ -385,8 +384,13 @@ class ArmFeedbackSubscriber(Node):
         super().__init__('arm_feedback_subscriber')
         try:
             self.subscription = self.create_subscription(
-                JointState, ARM_COMMAND_TOPIC, self.feedback_callback, 10
+              JointState,
+              ARM_FEEDBACK_TOPIC,    # ← same as command
+              self.feedback_callback,
+              10
             )
+
+
             self.latest_feedback = {}
         except Exception as e:
             logging.error(f"Error initializing arm feedback subscriber: {e}")
