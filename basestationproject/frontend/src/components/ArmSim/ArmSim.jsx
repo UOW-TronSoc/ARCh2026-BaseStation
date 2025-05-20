@@ -11,21 +11,20 @@ function ArmScene({ jointAngles, controlsRef }) {
   useEffect(() => {
     const loader = new URDFLoader();
     loader.packages = { arm_description: "/urdf" };
-
     loader.load("/urdf/robot.urdf", (robot) => {
       robotRef.current = robot;
-      robot.traverse((obj) => {
+      robot.traverse(obj => {
         obj.castShadow = true;
         obj.receiveShadow = true;
       });
       scene.add(robot);
 
-      // center orbit on robot's bounding-box center
+      // center the OrbitControls on the robot
       const box = new Box3().setFromObject(robot);
-      const center = new Vector3();
-      box.getCenter(center);
+      const c   = new Vector3();
+      box.getCenter(c);
       if (controlsRef.current) {
-        controlsRef.current.target.copy(center);
+        controlsRef.current.target.copy(c);
         controlsRef.current.update();
       }
     });
@@ -45,25 +44,21 @@ function ArmScene({ jointAngles, controlsRef }) {
 
 export default function ArmSim({ jointAngles }) {
   const controlsRef = useRef();
-
   return (
     <Canvas
       shadows
-      camera={{ position: [2, 2, 4], fov: 50 }}
-      onPointerDown={(e) => {
+      camera={{ position:[2,2,4], fov:50 }}
+      onPointerDown={e => {
         if (controlsRef.current) {
           controlsRef.current.target.copy(e.point);
           controlsRef.current.update();
         }
       }}
     >
-      <ambientLight intensity={0.6} />
-      <directionalLight position={[5, 5, 5]} castShadow />
-
-      {/* attach controlsRef so we can manipulate the pivot */}
-      <OrbitControls ref={controlsRef} />
-
-      <ArmScene jointAngles={jointAngles} controlsRef={controlsRef} />
+      <ambientLight intensity={0.6}/>
+      <directionalLight position={[5,5,5]} castShadow/>
+      <OrbitControls ref={controlsRef}/>
+      <ArmScene jointAngles={jointAngles} controlsRef={controlsRef}/>
     </Canvas>
   );
 }
