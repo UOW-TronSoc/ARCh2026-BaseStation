@@ -4,12 +4,18 @@ projectDescription: A Django-based web application for the ARCh2026 project, pro
 projectType: Web Application
 
 controllerKeyMappings:
-  moveForward: LEFT_STICK_UP
-  moveBackward: LEFT_STICK_DOWN
-  turnLeft: LEFT_STICK_LEFT
-  turnRight: LEFT_STICK_RIGHT
-  jump: A
-  crouch: B
+  W: 0
+  X: 1
+  Y: 2
+  Z: 3
+  leftTrigger: LT
+  rightTrigger: RT
+  buttonA: 0
+  buttonB: 1
+  buttonX: 2
+  buttonY: 3
+
+  # buttonId - four axis, two triggers, a, x, y, b separate mappings
 
 terminalEnv: zsh
 
@@ -24,9 +30,11 @@ dockerFlags:
 rosContainerParams:
   image: ros:humble
   workspace: /workspace
-  rosMasterUri: http://localhost:11311
+  rosMasterUrl: http://localhost:11311
   rosDistro: humble
   entrypoint: ~/ros2_ws/Dockerfile.ros2_base
+  ros2dds: Fast-DDS
+  domain_id: 0
 
 documentationLinks:
   projectDocumentation: 
