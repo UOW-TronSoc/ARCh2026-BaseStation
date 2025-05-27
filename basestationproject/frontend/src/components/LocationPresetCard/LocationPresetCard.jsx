@@ -30,7 +30,7 @@ const presets = [
   },
 ];
 
-export default function LocationPresetCard({ api }) {
+export default function LocationPresetCard({ api, onPreset }) {
   const [disabled, setDisabled] = useState(false);
 
   const handleClick = async (preset) => {
@@ -42,6 +42,7 @@ export default function LocationPresetCard({ api }) {
         joint_positions: preset.positions,
         joint_velocities: preset.velocities,
       });
+      onPreset?.(preset.positions, preset.velocities);
     } catch (err) {
       console.error(`Failed to send preset "${preset.id}":`, err.message);
     } finally {

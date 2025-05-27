@@ -8,7 +8,18 @@ export default function ArmFeedbackCard({ api }) {
   const fetchFeedback = async () => {
     try {
       const { data } = await axios.get(`${api}/arm-feedback/`);
-      setJoints(data.joints ?? []);
+      const positions  = data.joint_positions  || [];
+      const names      = data.joint_names      || [];
+      const velocities = data.joint_velocities || [];
+
+      // build a unified “joints” array
+      const combined = positions.map((pos, i) => ({
+        name:     names[i]      || `θ${i + 1}`,
+        position: pos,
+        velocity: velocities[i] || 0,
+      }));
+
+      setJoints(combined);
     } catch (err) {
       console.error("Failed to fetch arm feedback:", err.message);
     }
@@ -16,14 +27,13 @@ export default function ArmFeedbackCard({ api }) {
 
   useEffect(() => {
     fetchFeedback();
-    const interval = setInterval(fetchFeedback, 33); // update afap
+    const interval = setInterval(fetchFeedback, 33);
     return () => clearInterval(interval);
   }, []);
 
   return (
     <div className="card p-3">
       <h5 className="text-center mb-3 header">Feedback</h5>
-
       <table className={`table table-dark table-sm ${styles.table}`}>
         <thead>
           <tr>
@@ -34,11 +44,15 @@ export default function ArmFeedbackCard({ api }) {
         </thead>
         <tbody>
           {joints.length === 0 ? (
-            <tr><td colSpan="3" className="text-center text-muted">No data</td></tr>
+            <tr>
+              <td colSpan="3" className="text-center text-muted">
+                No data
+              </td>
+            </tr>
           ) : (
             joints.map((joint, i) => (
               <tr key={i}>
-                <td>{joint.name || `θ${i + 1}`}</td>
+                <td>{joint.name}</td>
                 <td>{joint.position}°</td>
                 <td>{joint.velocity}°/s</td>
               </tr>
