@@ -12,33 +12,34 @@ export default function ArmControl() {
   const API_BASE = "http://127.0.0.1:8000/api";
   const NUM_CAMS = 5;
 
-  // Camera state
+  // ─── State ─────────────────────────────────────────────────────────────────────
   const [camId, setCamId] = useState(0);
 
-  // jointAngles ← updated only via polling /api/arm-feedback/
+  // jointAngles ← read from /api/arm-feedback/ (physical or fake‐integrated positions)
+  // Now length 6, for joints 1–5 and EE
   const [jointAngles, setJointAngles] = useState([0, 0, 0, 0, 0, -127]);
   const [selectedJoint, setSelectedJoint] = useState(null);
-  const [jointSpeedOverrides] = useState([1, 1, 1]);
+  const [jointSpeedOverrides] = useState([5, 5, 5]); // deg/s for first three joints
 
-  // Track lock/horizontal state
+  // Lock/horiz flags for joint 4 (index 3)
   const [isLocked, setIsLocked] = useState(false);
   const [isHorizontal, setIsHorizontal] = useState(false);
   const holdIntervalRef = useRef(null);
 
-  // Gamepad edge detection refs
+  // Gamepad edge‐detection refs
   const yButtonRef = useRef(false);
   const xButtonRef = useRef(false);
   const aButtonRef = useRef(false);
 
-  // Poll `/api/arm-feedback/` every 50ms
+  // ─── Poll feedback (actual positions) every 50 ms ────────────────────────────────
   useEffect(() => {
     let isMounted = true;
-
     const fetchFeedback = async () => {
       try {
         const res = await axios.get(`${API_BASE}/arm-feedback/`);
         if (res.status === 200 && Array.isArray(res.data.joints)) {
-          const positions = res.data.joints.map((j) => j.position);
+          // Take first 6 positions
+          const positions = res.data.joints.map((j) => j.position).slice(0, 6);
           if (isMounted && positions.length === 6) {
             setJointAngles(positions);
           }
@@ -57,21 +58,20 @@ export default function ArmControl() {
     };
   }, []);
 
-  // Helper: POST `/api/arm-command/` without updating state locally
-  const sendArmCommand = async (positions) => {
+  // ─── Helper: POST `/api/arm-velocity-command/ { joint_velocities: [v1…v6] }` ───
+  const sendVelocityCommand = async (velocities) => {
     try {
-      await axios.post(`${API_BASE}/arm-command/`, {
-        joint_positions: positions,
+      await axios.post(`${API_BASE}/arm-velocity-command/`, {
+        joint_velocities: velocities,
       });
     } catch (err) {
-      console.error("❌ Failed to send arm command:", err.message);
+      console.error("❌ Failed to send velocity command:", err.message);
     }
-    // Wait for feedback to update `jointAngles`
+    // The ROS2‐side must integrate these into positions and republish feedback
   };
 
-  // If locked or horizontal, continuously send hold commands
+  // ─── When locked/horizontal is active, continuously hold joint 4 at fixed angle ─
   useEffect(() => {
-    // Clear any existing interval
     if (holdIntervalRef.current) {
       clearInterval(holdIntervalRef.current);
       holdIntervalRef.current = null;
@@ -79,10 +79,10 @@ export default function ArmControl() {
 
     if (isLocked || isHorizontal) {
       holdIntervalRef.current = setInterval(() => {
-        // Always use the latest jointAngles but override index 3
-        const newAngles = [...jointAngles];
-        newAngles[3] = isLocked ? 90 : 0;
-        sendArmCommand(newAngles);
+        const velCmd = [0, 0, 0, 0, 0, 0];
+        // To hold at a fixed angle, we repeatedly send zero velocity on joint 4 (index 3)
+        // Joint 4’s actual position remains unchanged by the integrator/hardware.
+        sendVelocityCommand(velCmd);
       }, 50);
     }
 
@@ -94,68 +94,82 @@ export default function ArmControl() {
     };
   }, [isLocked, isHorizontal, jointAngles]);
 
-  // Handle IncrementalMovementCard clicks
+  // ─── Handle “Incremental Movement” clicks ────────────────────────────────────────
   const handleSimIncrement = (mode, target, value) => {
     if (mode !== "joint") return;
-    // If joint4 is locked/horizontal, ignore increments to it
-    if (isLocked || isHorizontal) {
-      if (target === "Theta4") return;
+
+    // If joint 4 is locked/horizontal, ignore requests to move it
+    if ((isLocked || isHorizontal) && target === "Theta4") {
+      return;
     }
+
+    // Map “Theta#” → index 0..5 (including EE at index 5)
     const jointIndex = {
       Theta1: 0,
       Theta2: 1,
       Theta3: 2,
       Theta4: 3,
       Theta5: 4,
-      EE: 5,
+      EE:     5,
     }[target];
     if (jointIndex === undefined) return;
 
-    const newAngles = [...jointAngles];
-    newAngles[jointIndex] += value;
-    sendArmCommand(newAngles);
+    // value is interpreted as deg/s or percent for gripper (EE)
+    const velCmd = [0, 0, 0, 0, 0, 0];
+    velCmd[jointIndex] = value;
+    sendVelocityCommand(velCmd);
     setSelectedJoint(null);
   };
 
-  // Handle preset clicks
+  // ─── Handle preset: send a brief velocity until the arm reaches target ───────────
   const handlePresetTriggered = (presetAngles) => {
-    // If locked/horizontal, override preset's joint4
-    const newAngles = [...presetAngles];
-    if (isLocked) newAngles[3] = 90;
-    if (isHorizontal) newAngles[3] = 0;
-    sendArmCommand(newAngles);
+    const SPEED = 20; // deg/s for joints 1–5
+    const velCmd = jointAngles.map((cur, i) => {
+      if ((isLocked && i === 3) || (isHorizontal && i === 3)) {
+        return 0;
+      }
+      if (i < 5) {
+        if (cur < presetAngles[i]) return SPEED;
+        if (cur > presetAngles[i]) return -SPEED;
+        return 0;
+      } else {
+        // For EE (index 5), presets generally don't set gripper, so keep zero
+        return 0;
+      }
+    });
+    sendVelocityCommand(velCmd);
+
+    // After a fixed time, stop all motion
+    setTimeout(() => {
+      sendVelocityCommand([0, 0, 0, 0, 0, 0]);
+    }, 1000);
+
     setSelectedJoint(null);
   };
 
-  // Lock pitch toggle
+  // ─── Lock / Horizontal pitch toggles ───────────────────────────────────────────
   const handleLockPitch = () => {
     if (isLocked) {
       setIsLocked(false);
     } else {
       setIsLocked(true);
       setIsHorizontal(false);
-      // Immediately send once to set joint4 to 90°
-      const newAngles = [...jointAngles];
-      newAngles[3] = 90;
-      sendArmCommand(newAngles);
+      // Immediately send zero velocity to hold joint 4
+      sendVelocityCommand([0, 0, 0, 0, 0, 0]);
     }
   };
 
-  // Horizontal pitch toggle
   const handleHorizontalPitch = () => {
     if (isHorizontal) {
       setIsHorizontal(false);
     } else {
       setIsHorizontal(true);
       setIsLocked(false);
-      // Immediately send once to set joint4 to 0°
-      const newAngles = [...jointAngles];
-      newAngles[3] = 0;
-      sendArmCommand(newAngles);
+      sendVelocityCommand([0, 0, 0, 0, 0, 0]);
     }
   };
 
-  // Gamepad polling: only send commands
+  // ─── Gamepad polling: send per‐joint velocity commands ─────────────────────────
   useEffect(() => {
     const pollGamepad = () => {
       const gp = navigator.getGamepads()[0];
@@ -168,6 +182,7 @@ export default function ArmControl() {
       const x = gp.buttons[2]?.pressed;
       const a = gp.buttons[0]?.pressed;
 
+      // Cycle joint selection with Y/X/A among 6 joints (0..5)
       if (y && !yButtonRef.current) {
         setSelectedJoint((prev) => (prev === null ? 0 : (prev + 1) % 6));
       }
@@ -182,22 +197,37 @@ export default function ArmControl() {
       xButtonRef.current = x;
       aButtonRef.current = a;
 
-      if (selectedJoint !== null && (rt || lt)) {
-        // If locked/horizontal and trying to move joint4, ignore
+      // Build a 6‐element velocity command
+      const velCmd = [0, 0, 0, 0, 0, 0];
+
+      if (selectedJoint !== null) {
+        // If joint 4 is locked/horizontal, ignore attempts to move it
         if ((isLocked || isHorizontal) && selectedJoint === 3) {
+          sendVelocityCommand([0, 0, 0, 0, 0, 0]);
           return;
         }
-        const newAngles = [...jointAngles];
+
+        // Determine speed: first three joints use overrides, joints 4 & 5 use 10 deg/s,
+        // and EE (index 5) can use a special value if needed (e.g. 50 for open/close).
+        let speed = 0;
         if (selectedJoint < 3) {
-          const speed = jointSpeedOverrides[selectedJoint];
-          newAngles[selectedJoint] += (rt ? speed : 0) - (lt ? speed : 0);
+          speed = jointSpeedOverrides[selectedJoint];
         } else if (selectedJoint < 5) {
-          newAngles[selectedJoint] += (rt ? 5 : 0) - (lt ? 5 : 0);
+          speed = 10;
         } else {
-          newAngles[5] = rt ? 255 : lt ? 0 : newAngles[5];
+          // For EE (gripper), a different scale, e.g. ±50 for open/close %.
+          speed = 50;
         }
-        sendArmCommand(newAngles);
+
+        if (rt) {
+          velCmd[selectedJoint] = speed;
+        } else if (lt) {
+          velCmd[selectedJoint] = -speed;
+        }
       }
+
+      // Always send something, even zeros, to stop movement when triggers release
+      sendVelocityCommand(velCmd);
     };
 
     const id = setInterval(pollGamepad, 50);
@@ -240,12 +270,14 @@ export default function ArmControl() {
 
         <div className="col-lg-3 mt-3 d-flex flex-column justify-content-between">
           <LocationPresetCard onPresetTriggered={handlePresetTriggered} />
+
           <button
             className="btn btn-secondary w-100 mt-3"
             onClick={handleLockPitch}
           >
             {isLocked ? "Unlock Pitch" : "Lock Pitch"}
           </button>
+
           <button
             className="btn btn-secondary w-100 mt-2"
             onClick={handleHorizontalPitch}

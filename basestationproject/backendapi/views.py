@@ -446,9 +446,36 @@ class ArmFeedbackSubscriber(Node):
             self.get_logger().error(f"Error processing feedback: {e}")
 
 
-# ─── Instantiate & register ROS2 nodes ───────────────────────────────────────────
-# Make sure ROS2Manager has been imported and initialized before this point.
-# ros_manager = ROS2Manager.get_instance()
+# ─── ArmVelocityPublisher Node ───────────────────────────────────────────────
+class ArmVelocityPublisher(Node):
+    def __init__(self):
+        super().__init__('arm_velocity_publisher')
+        try:
+            # Publish to /arm_velocity_command with JointState
+            self.publisher = self.create_publisher(JointState, '/arm_velocity_command', 10)
+            self.get_logger().info("ArmVelocityPublisher initialized, publishing to /arm_velocity_command")
+        except Exception as e:
+            logging.error(f"Error initializing ArmVelocityPublisher: {e}")
+
+    def publish_velocity(self, velocity_list):
+        try:
+            # velocity_list should be a list of 6 floats (one per joint, including EE)
+            vel_msg = JointState()
+            vel_msg.velocity = [float(v) for v in velocity_list]
+            # Fill in names for clarity (must match the arm’s joint names)
+            vel_msg.name = [f"joint_{i}" for i in range(len(velocity_list))]
+            # We do not set vel_msg.position (or effort) here—only velocities matter
+            vel_msg.header.stamp = self.get_clock().now().to_msg()
+            self.publisher.publish(vel_msg)
+            self.get_logger().info(f"Published velocity to /arm_velocity_command: {velocity_list}")
+        except Exception as e:
+            self.get_logger().error(f"Error publishing velocity command: {e}")
+
+# ─── Instantiate and register the velocity publisher with your ROS2Manager ────────
+# (Assuming you already have ros_manager = ROS2Manager.get_instance())
+arm_velocity_node = ArmVelocityPublisher()
+ros_manager.add_node(arm_velocity_node)
+
 
 # 1) Create nodes
 arm_command_node = ArmCommandPublisher()
@@ -491,6 +518,41 @@ def send_arm_command(request):
         return JsonResponse({"error": "Internal server error"}, status=500)
 
 
+# =================================
+
+
+@csrf_exempt
+def send_arm_velocity(request):
+    """
+    Expects a POST with JSON body:
+      { "joint_velocities": [v0, v1, v2, v3, v4, v5] }
+    Publishes those six floats into JointState.velocity and sends on /arm_velocity_command.
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+
+    try:
+        payload = json.loads(request.body)
+        velocities = payload.get("joint_velocities", [])
+    except json.JSONDecodeError:
+        logging.error("Invalid JSON in send_arm_velocity.")
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    if not isinstance(velocities, list) or len(velocities) != 6:
+        return JsonResponse(
+            {"error": "Expected 'joint_velocities' as a list of 6 numbers."},
+            status=400
+        )
+
+    try:
+        # Publish to the ROS2 topic
+        arm_velocity_node.publish_velocity(velocities)
+        return JsonResponse({"status": "velocity command sent"})
+    except Exception as e:
+        logging.error(f"Unexpected error in send_arm_velocity: {e}")
+        return JsonResponse({"error": "Failed to publish velocity"}, status=500)
+
+# =================================
 def get_arm_feedback(request):
     """
     GET /api/arm-feedback/

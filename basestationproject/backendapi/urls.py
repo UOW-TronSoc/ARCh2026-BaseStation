@@ -14,13 +14,13 @@ urlpatterns = [
 
     path('logs/', views.get_rover_logs, name='get_rover_logs'),
     
-    #arm
-    
+    # arm
     path('arm-feedback/', views.get_arm_feedback, name='arm_feedback'),
     path('arm-command/', views.send_arm_command, name='arm_command'),
+    path("arm-velocity-command/", views.send_arm_velocity, name='arm_velocity'),
+    
     
     # radio
-
     path("radio-feedback/", views.get_radio_feedback, name="radio_feedback"),
     
     # battery
