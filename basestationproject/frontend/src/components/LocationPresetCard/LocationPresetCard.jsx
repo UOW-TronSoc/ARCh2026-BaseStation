@@ -1,42 +1,47 @@
 import React, { useState } from "react";
-import styles from "./LocationPresetCard.module.css";
-import axios from "axios";
+import "./LocationPresetCard.module.css"; // your styling file
 
-const presets = [
-  { id: "home", label: "Home" },
-  { id: "tiles", label: "Tiles" },
-  { id: "scoop", label: "Scoop" },
-  { id: "ground", label: "Ground" },
-];
+// Map each preset name → six joint angles (degrees)
+const presets = {
+  home:   [0.0,   0.0,    0.0,   0.0,    0.0,   -127.0],
+  tiles:  [30.0,  15.0,  -10.0,  0.0,   45.0,   -127.0],
+  scoop:  [60.0,  30.0,  -20.0, 10.0,   90.0,   -127.0],
+  ground: [90.0,  45.0,  -30.0, 20.0,  135.0,   -127.0],
+};
 
-export default function LocationPresetCard({ api }) {
+export default function LocationPresetCard({ onPresetTriggered }) {
   const [disabled, setDisabled] = useState(false);
 
-  const handleClick = async (id) => {
+  const handleClick = (presetId) => {
     if (disabled) return;
 
-    try {
-      setDisabled(true);
-      await axios.post(`${api}/arm-preset-command/${id}/`);
-    } catch (err) {
-      console.error(`Failed to trigger preset "${id}":`, err.message);
-    } finally {
-      setTimeout(() => setDisabled(false), 5000); // re-enable after 5s
+    const angles = presets[presetId];
+    if (!angles) {
+      console.error(`Unknown preset "${presetId}"`);
+      return;
     }
+
+    setDisabled(true);
+    // Invoke parent callback with the six‐element array
+    if (onPresetTriggered) {
+      onPresetTriggered(angles);
+    }
+    // Re‐enable buttons after 1 s (to avoid rapid repeats)
+    setTimeout(() => setDisabled(false), 1000);
   };
 
   return (
     <div className="card p-3">
-      <h5 className="text-center mb-3 header">Locations</h5>
-      <div className="d-flex flex-wrap justify-content-between gap-2">
-        {presets.map(({ id, label }) => (
+      <h5 className="text-center mb-3">Location Presets</h5>
+      <div className="d-flex flex-wrap justify-content-center gap-2">
+        {Object.keys(presets).map((id) => (
           <button
             key={id}
-            className={`btn ${styles.presetButton}`}
+            className="btn btn-outline-primary"
             onClick={() => handleClick(id)}
             disabled={disabled}
           >
-            {label}
+            {id.charAt(0).toUpperCase() + id.slice(1)}
           </button>
         ))}
       </div>

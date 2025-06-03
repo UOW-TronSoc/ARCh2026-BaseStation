@@ -1,0 +1,46 @@
+configVersion: 1.0
+projectName: ARCh2026-BaseStation
+projectDescription: A Django-based web application for the ARCh2026 project, providing a user interface for controlling the robot and monitoring its status.
+projectType: Web Application
+
+controllerKeyMappings:
+  W: 0
+  X: 1
+  Y: 2
+  Z: 3
+  leftTrigger: LT
+  rightTrigger: RT
+  buttonA: 0
+  buttonB: 1
+  buttonX: 2
+  buttonY: 3
+
+  # buttonId - four axis, two triggers, a, x, y, b separate mappings
+
+terminalEnv: zsh
+
+dockerFlags:
+  detach: true
+  rm: true
+  network: host
+  env:
+    - ROS_DOMAIN_ID=0
+    - DISPLAY=${DISPLAY}
+
+rosContainerParams:
+  image: ros:humble
+  workspace: /workspace
+  rosMasterUrl: http://localhost:11311
+  rosDistro: humble
+  entrypoint: ~/ros2_ws/Dockerfile.ros2_base
+  ros2dds: Fast-DDS
+  domain_id: 0
+
+documentationLinks:
+  projectDocumentation: 
+  sourceCode: https://github.com/UOW-TronSoc/ARCh2026-BaseStation
+  projectManagement: https://github.com/UOW-TronSoc/ARCh2026-BaseStation/issues
+  rosDocs: https://docs.ros.org/en/humble/index.html
+  dockerDocs: https://docs.docker.com/
+  djangoDocs: https://docs.djangoproject.com/en/stable/
+  djangoRestFrameworkDocs: https://www.django-rest-framework.org/
