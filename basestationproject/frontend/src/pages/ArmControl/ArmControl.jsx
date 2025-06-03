@@ -9,6 +9,7 @@ import LocationPresetCard from "components/LocationPresetCard/LocationPresetCard
 
 
 export default function ArmControl() {
+  document.title = "Arm Control"
   const API_BASE = "http://127.0.0.1:8000/api";
   const NUM_CAMS = 5;
 

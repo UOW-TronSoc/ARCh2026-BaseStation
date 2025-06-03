@@ -25,5 +25,10 @@ urlpatterns = [
     
     # battery
     path('battery-feedback/', views.get_battery_feedback, name='battery-feedback'),
+    
+    #logs
+    path("list-logs/", views.list_logs),
+    path("get-log/<str:filename>/", views.get_log_file),
+
 
 ]

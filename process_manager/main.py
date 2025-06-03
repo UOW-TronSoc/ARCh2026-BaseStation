@@ -43,6 +43,7 @@ static = {
     "Core pub": "../robot_controller/drive_control/core_publisher.py",
     "Arm Feedback": "../robot_controller/arm/test_arm_feedback_publisher.py",
     "Fake Joint Integrator": "../robot_controller/arm/fake_integrator.py",
+    "Logger": "../robot_controller/log/logger.py",
 }
 for k, v in static.items():
     scripts[k] = v

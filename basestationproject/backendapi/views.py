@@ -1,8 +1,10 @@
 # Django Imports
 from django.http import JsonResponse, StreamingHttpResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_GET
 from django.shortcuts import render
 from django.core.cache import cache
+from django.conf import settings
 
 # Django Rest Framework Imports
 from rest_framework.response import Response
@@ -33,6 +35,7 @@ except ImportError as e:
 
 # Third-party Imports
 import cv2
+import os
 import numpy as np
 import httpx
 import json
@@ -676,3 +679,62 @@ def get_battery_feedback(request):
     except Exception as e:
         logging.error(f"Error retrieving battery data: {e}")
         return JsonResponse({"error": "Failed to retrieve battery data"}, status=500)
+
+
+
+# ----------------------------
+
+# Logger
+
+# ----------------------------
+
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Point LOG_DIR at your logger’s output folder.
+# logger.py lives in: …/robot_controller/log/logger.py
+# It writes into a subfolder “logs” right next to itself, i.e.:
+#
+#   …/robot_controller/log/logs/<topic>_<timestamp>.csv
+#
+# Your Django “BASE_DIR” is (…)…/ARCh2026-BaseStation/basestationproject
+# So the full path to CSVs is:
+#
+#   BASE_DIR/robot_controller/log/logs
+# ───────────────────────────────────────────────────────────────────────────────
+LOG_DIR = os.path.join(settings.BASE_DIR, "..", "robot_controller", "log", "logs")
+
+@require_GET
+def list_logs(request):
+    """
+    GET /api/list-logs/
+    Returns JSON: { "files": ["arm_command_20250603_150102.csv", ...] }
+    """
+    try:
+        if not os.path.isdir(LOG_DIR):
+            return JsonResponse({"files": []})
+        files = sorted(f for f in os.listdir(LOG_DIR) if f.endswith(".csv"))
+        return JsonResponse({"files": files})
+    except Exception as e:
+        logging.error(f"Error listing logs in {LOG_DIR}: {e}")
+        return JsonResponse({"files": []}, status=500)
+
+
+@require_GET
+def get_log_file(request, filename):
+    """
+    GET /api/get-log/<filename>/
+    Reads logs/<filename> from LOG_DIR and returns:
+      { "content": "<entire CSV as one string>" }
+    """
+    safe_name = os.path.basename(filename)  # prevent path traversal
+    full_path = os.path.join(LOG_DIR, safe_name)
+    if not os.path.isfile(full_path):
+        return JsonResponse({"error": "File not found"}, status=404)
+
+    try:
+        with open(full_path, "r") as f:
+            data = f.read()
+        return JsonResponse({"content": data})
+    except Exception as e:
+        logging.error(f"Error reading log file {full_path}: {e}")
+        return JsonResponse({"error": "Failed to read file"}, status=500)
