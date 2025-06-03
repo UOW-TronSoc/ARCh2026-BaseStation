@@ -381,233 +381,149 @@ ARM_COMMAND_TOPIC = "arm_command"
 # ARM_FEEDBACK_TOPIC = "arm_feedback" # dont need 
 
 
-class ArmFeedbackSubscriber(Node):
-    def __init__(self):
-        super().__init__('arm_feedback_subscriber')
-        try:
-            self.subscription = self.create_subscription(
-                JointState, ARM_COMMAND_TOPIC, self.feedback_callback, 10
-            )
-            self.latest_feedback = {}
-        except Exception as e:
-            logging.error(f"Error initializing arm feedback subscriber: {e}")
-
-    def feedback_callback(self, msg):
-      try:
-          positions = list(msg.position)
-          velocities = list(msg.velocity)
-          names = list(msg.name)
-
-          while len(positions) < 6:
-              positions.append(0.0)
-          while len(velocities) < 6:
-              velocities.append(0.0)
-          while len(names) < 6:
-              names.append(f"θ{len(names)+1}")
-
-          self.latest_feedback["joint_positions"] = positions
-          self.latest_feedback["joint_velocities"] = velocities
-          self.latest_feedback["joint_names"] = names
-
-      except Exception as e:
-          logging.error(f"Error processing arm feedback: {e}")
-
-
-
-
-# --- Arm Command Publisher ---
+# ─── ArmCommandPublisher Node ────────────────────────────────────────────────────
 class ArmCommandPublisher(Node):
     def __init__(self):
         super().__init__('arm_command_publisher')
-        try:
-            self.publisher = self.create_publisher(JointState, ARM_COMMAND_TOPIC, 10)
-            # self.gripper_publisher = self.create_publisher(Bool, GRIPPER_COMMAND_TOPIC, 10)
-        except Exception as e:
-            logging.error(f"Error initializing arm command publisher: {e}")
+        # Publish JointState messages on /arm_command
+        self.publisher = self.create_publisher(JointState, ARM_COMMAND_TOPIC, 10)
+        self.get_logger().info("ArmCommandPublisher initialized, publishing to /arm_command")
 
     def publish_arm_command(self, joint_positions):
+        """
+        joint_positions: list of 6 floats
+        Publishes a sensor_msgs/JointState on /arm_command.
+        """
         try:
-            float_positions = [float(p) if isinstance(p, (int, float)) else 0.0 for p in joint_positions]
-
-            arm_msg = JointState()
-            arm_msg.position = float_positions
-            arm_msg.name = [f"joint_{i}" for i in range(len(float_positions))]
-            arm_msg.header.stamp = self.get_clock().now().to_msg()
-
-            self.publisher.publish(arm_msg)
-            self.get_logger().info(f"Published to /arm_command: {float_positions}")
-
+            msg = JointState()
+            msg.header.stamp = self.get_clock().now().to_msg()
+            # Name joints "joint_0" ... "joint_5"
+            msg.name = [f"joint_{i}" for i in range(len(joint_positions))]
+            msg.position = [float(x) for x in joint_positions]
+            # velocities/effort left empty
+            self.publisher.publish(msg)
+            self.get_logger().info(f"Published JointState: {msg.position}")
         except Exception as e:
-            logging.error(f"Error publishing arm command: {e}")
+            self.get_logger().error(f"Error publishing arm command: {e}")
 
 
-# --- Initialize and Register Nodes ---
-arm_feedback_node = ArmFeedbackSubscriber()
+# ─── ArmFeedbackSubscriber Node ─────────────────────────────────────────────────
+class ArmFeedbackSubscriber(Node):
+    def __init__(self):
+        super().__init__('arm_feedback_subscriber')
+        # Subscribe to the real robot/simulator topic for joint states.
+        # If your simulator or robot publishes to '/joint_states', keep this.
+        # Otherwise, change to whatever feedback topic you actually use.
+        self.subscription = self.create_subscription(
+            JointState,
+            '/arm_command',
+            self.feedback_callback,
+            10
+        )
+        self.latest_feedback = {}  # will hold keys: "joint_positions", "joint_velocities", "joint_names"
+        self.get_logger().info("ArmFeedbackSubscriber initialized, subscribed to /joint_states")
+
+    def feedback_callback(self, msg: JointState):
+        try:
+            positions = list(msg.position)[:6]
+            velocities = list(msg.velocity)[:6] if msg.velocity else [0.0] * len(positions)
+            names = list(msg.name)[:6] if msg.name else [f"joint_{i}" for i in range(len(positions))]
+
+            # Pad arrays to length 6 if shorter
+            while len(positions) < 6:
+                positions.append(0.0)
+            while len(velocities) < 6:
+                velocities.append(0.0)
+            while len(names) < 6:
+                names.append(f"joint_{len(names)}")
+
+            self.latest_feedback = {
+                "joint_positions": positions,
+                "joint_velocities": velocities,
+                "joint_names": names
+            }
+        except Exception as e:
+            self.get_logger().error(f"Error processing feedback: {e}")
+
+
+# ─── Instantiate & register ROS2 nodes ───────────────────────────────────────────
+# Make sure ROS2Manager has been imported and initialized before this point.
+# ros_manager = ROS2Manager.get_instance()
+
+# 1) Create nodes
 arm_command_node = ArmCommandPublisher()
+arm_feedback_node = ArmFeedbackSubscriber()
 
-ros_manager.add_node(arm_feedback_node)
+# 2) Add them to the ROS2Manager so they start spinning in the background
 ros_manager.add_node(arm_command_node)
+ros_manager.add_node(arm_feedback_node)
 
-# --- API: Get Arm Feedback ---
+
+# ─── Django Views ────────────────────────────────────────────────────────────────
+@csrf_exempt
+def send_arm_command(request):
+    """
+    POST /api/arm-command/
+    Expects JSON body: { "joint_positions": [float0, float1, ..., float5] }
+    Publishes those 6 floats as a JointState on /arm_command via arm_command_node.
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "Invalid request method"}, status=405)
+
+    try:
+        data = json.loads(request.body)
+        joint_positions = data.get("joint_positions", [])
+
+        if not isinstance(joint_positions, list) or len(joint_positions) != 6:
+            return JsonResponse(
+                {"error": "Expected 'joint_positions' as a list of 6 floats"},
+                status=400
+            )
+
+        # Publish to ROS2:
+        arm_command_node.publish_arm_command(joint_positions)
+        return JsonResponse({"message": "Command sent successfully!"})
+    except json.JSONDecodeError:
+        logging.error("Invalid JSON in send_arm_command")
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    except Exception as e:
+        logging.error(f"Error in send_arm_command: {e}")
+        return JsonResponse({"error": "Internal server error"}, status=500)
+
+
 def get_arm_feedback(request):
+    """
+    GET /api/arm-feedback/
+    Returns latest cached feedback as:
+      { "joints": [ {"name": "...", "position": X, "velocity": V}, ... ] }
+    If no feedback available yet, returns HTTP 204 with an empty body.
+    """
+    if request.method != "GET":
+        return JsonResponse({"error": "Invalid request method"}, status=405)
+
     try:
         feedback = arm_feedback_node.latest_feedback
-
-        if "joint_positions" not in feedback:
+        if not feedback or "joint_positions" not in feedback:
+            # No data yet
             return JsonResponse({"joints": []}, status=204)
 
         positions = feedback["joint_positions"]
-        names = feedback.get("joint_names", [f"θ{i+1}" for i in range(len(positions))])
         velocities = feedback.get("joint_velocities", [0.0] * len(positions))
+        names = feedback.get("joint_names", [f"joint_{i}" for i in range(len(positions))])
 
-        joints = [
-            {"name": names[i], "position": positions[i], "velocity": velocities[i]}
-            for i in range(len(positions))
-        ]
+        joints = []
+        for i in range(len(positions)):
+            joints.append({
+                "name": names[i],
+                "position": positions[i],
+                "velocity": velocities[i]
+            })
 
         return JsonResponse({"joints": joints})
-
     except Exception as e:
-        logging.error(f"Error retrieving arm feedback: {e}")
+        logging.error(f"Error in get_arm_feedback: {e}")
         return JsonResponse({"error": "Failed to retrieve feedback"}, status=500)
 
-# --- API: Send Arm Command ---
-@csrf_exempt
-def send_arm_command(request):
-    if request.method == "POST":
-        try:
-            data = json.loads(request.body)
-            joint_positions = data.get("joint_positions", [])
-
-            if len(joint_positions) != 6:
-                return JsonResponse({"error": "Expected 6 joint positions (including gripper)"}, status=400)
-
-            arm_command_node.publish_arm_command(joint_positions)
-            return JsonResponse({"message": "Command sent successfully!"})
-        except json.JSONDecodeError:
-            logging.error("Invalid JSON received.")
-            return JsonResponse({"error": "Invalid JSON"}, status=400)
-        except Exception as e:
-            logging.error(f"Unexpected error processing arm command: {e}")
-            return JsonResponse({"error": "Internal server error"}, status=500)
-
-    return JsonResponse({"error": "Invalid request method"}, status=405)
-
-
-class ArmPresetPublisher(Node):
-    def __init__(self):
-        super().__init__('arm_preset_publisher')
-        self.publisher = self.create_publisher(String, "/arm/preset_command", 10)
-
-    def publish_preset(self, preset):
-        self.publisher.publish(String(data=preset))
-
-@csrf_exempt
-def arm_preset_command_view(request, preset):
-    if request.method != "POST":
-        return JsonResponse({"error": "POST required"}, status=405)
-    arm_preset_node.publish_preset(preset)
-    return JsonResponse({"status": "ok", "preset": preset})
-
-
-# =======================
-class ArmPitchLockPublisher(Node):
-    def __init__(self):
-        super().__init__('arm_pitch_lock_publisher')
-        self.publisher = self.create_publisher(Bool, "/arm/lock_pitch", 10)
-
-    def publish_lock(self, locked):
-        self.publisher.publish(Bool(data=locked))
-
-@csrf_exempt
-def lock_pitch_view(request):
-    if request.method != "POST":
-        return JsonResponse({"error": "POST required"}, status=405)
-
-    try:
-        data = json.loads(request.body.decode())
-        locked = data.get("locked", False)
-    except Exception:
-        return JsonResponse({"error": "Invalid JSON"}, status=400)
-
-    arm_pitch_lock_node.publish_lock(locked)
-    return JsonResponse({"status": "ok", "locked": locked})
-
-
-# =======================
-
-
-@csrf_exempt
-def horizontal_pitch_view(request):
-    if request.method != "POST":
-        return JsonResponse({"error": "POST required"}, status=405)
-
-    try:
-        data = json.loads(request.body.decode())
-        names = data.get("name", [])
-        positions = data.get("position", [])
-    except Exception as e:
-        logging.error("JSON decode failed:", str(e))
-        logging.error("Raw body:", request.body.decode(errors="replace"))
-        return JsonResponse({"error": "Invalid JSON", "details": str(e)}, status=400)
-
-    if not names or not positions or len(names) != len(positions):
-        return JsonResponse({"error": "Mismatched name/position arrays"}, status=400)
-
-    msg = JointState()
-    msg.name = names
-    msg.position = [float(p) for p in positions]
-    msg.velocity = []
-    msg.effort = []
-
-    arm_command_node.publisher.publish(msg)
-    return JsonResponse({"status": "ok", "published": {"name": names, "position": list(msg.position)}})
-
-
-
-
-
-# =======================
-class ArmIncrementCommandPublisher(Node):
-    def __init__(self):
-        super().__init__('arm_increment_publisher')
-        self.publisher = self.create_publisher(ArmIncrementCommand, "/arm/increment_command", 10)
-
-    def publish_increment(self, mode, target, value):
-        msg = ArmIncrementCommand()
-        msg.mode = mode
-        msg.target = target
-        msg.value = value
-        self.publisher.publish(msg)
-
-@csrf_exempt
-def arm_increment_command_view(request):
-    if request.method != "POST":
-        return JsonResponse({"error": "POST required"}, status=405)
-
-    try:
-        data = json.loads(request.body.decode())
-        mode = data.get("mode")
-        target = data.get("target")
-        value = float(data.get("value"))
-    except Exception as e:
-        return JsonResponse({"error": "Invalid payload", "details": str(e)}, status=400)
-
-    arm_increment_node.publish_increment(mode, target, value)
-
-    return JsonResponse({
-        "status": "ok",
-        "sent": {"mode": mode, "target": target, "value": value}
-    })
-
-
-arm_preset_node = ArmPresetPublisher()
-arm_pitch_lock_node = ArmPitchLockPublisher()
-arm_increment_node = ArmIncrementCommandPublisher()
-
-ros_manager.add_node(arm_preset_node)
-ros_manager.add_node(arm_pitch_lock_node)
-ros_manager.add_node(arm_increment_node)
 
 
 # ----------------------------

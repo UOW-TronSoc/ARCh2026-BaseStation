@@ -19,12 +19,6 @@ urlpatterns = [
     path('arm-feedback/', views.get_arm_feedback, name='arm_feedback'),
     path('arm-command/', views.send_arm_command, name='arm_command'),
     
-    path("arm-preset-command/<str:preset>/", views.arm_preset_command_view),
-    path("lock-end-effector-pitch/", views.lock_pitch_view),
-    path("horizontal-end-effector-pitch/", views.horizontal_pitch_view),
-    path("arm-increment-command/", views.arm_increment_command_view),
-
-
     # radio
 
     path("radio-feedback/", views.get_radio_feedback, name="radio_feedback"),
