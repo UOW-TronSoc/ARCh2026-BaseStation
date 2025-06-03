@@ -26,11 +26,9 @@ jobs:
     - name: Build ros2_base image
       run: |
         docker build -t arch2025/ros2-base -f basestationproject/ros2_ws/Dockerfile.ros2_base basestationproject/ros2_ws
-
     - name: Build Django image
       run: |
         docker build -t arch2025/django-ros2 -f basestationproject/Dockerfile.django basestationproject
-
     - name: Run tests in container
       run: |
         docker run --network host --rm -v ${{ github.workspace }}/basestationproject:/app \
