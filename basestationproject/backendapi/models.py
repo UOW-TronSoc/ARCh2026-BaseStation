@@ -1,13 +1,19 @@
 from django_redis import get_redis_connection
 from django.db import models
 
-class ExampleModel(models.Model):
+
+class ChecklistGroup(models.Model):
     name = models.CharField(max_length=100)
-    redis_connection = get_redis_connection()
 
-    def save(self, *args, **kwargs):
-        self.redis_connection.set(self.name, self.name)
-        super().save(*args, **kwargs)
+    def __str__(self):
+        return self.name
 
-    def retrieve_data(self):
-        return self.redis_connection.get(self.name)
+class ChecklistTask(models.Model):
+    group = models.ForeignKey(ChecklistGroup, related_name='tasks', on_delete=models.CASCADE)
+    text = models.TextField()
+    completed = models.BooleanField(default=False)
+    value = models.TextField(blank=True, null=True)
+    parent = models.ForeignKey('self', null=True, blank=True, related_name='subtasks', on_delete=models.CASCADE)
+
+    def __str__(self):
+        return self.text

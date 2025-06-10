@@ -5,6 +5,7 @@ import ScriptManager from 'pages/ScriptManager/ScriptManager';
 import ArmControl from 'pages/ArmControl/ArmControl';
 import CameraFeed from 'pages/CameraFeed/CameraFeed';
 import LogViewer from 'pages/LogViewer/LogViewer';
+import Checklist from 'pages/Checklist/Checklist';
 
 import './styles/variables.css';
 import './App.css';
@@ -21,6 +22,8 @@ export default function App() {
         <Route path="/arm-control" element={<ArmControl />} />
         <Route path="/script-manager" element={<ScriptManager />} />
         <Route path="/cameras" element={<CameraFeed />} />
+        <Route path="/checklist" element={<Checklist />} />
+
         <Route path="/logs" element={<LogViewer />} />
         <Route path="*"          element={<div className="text-center mt-4">404 Not Found</div>} />
       </Routes>

@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'django_redis',
     'corsheaders',
+    'rest_framework',
     'backendapi',
 ]
 
@@ -99,13 +100,13 @@ DATABASES = {
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": "redis://redis:6379/1",  # ⬅ Use the Redis container name instead of 127.0.0.1
+        "LOCATION": "redis://127.0.0.1:6379/1",  # or 'redis://redis:6379/1' if using docker-compose service
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
-        },
-        "KEY_PREFIX": "tron_soc_dashboard"
+        }
     }
 }
+
 
 
 SESSION_ENGINE = "django.contrib.sessions.backends.cache"

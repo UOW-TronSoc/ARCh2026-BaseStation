@@ -1,3 +1,5 @@
 from django.contrib import admin
+from .models import ChecklistGroup, ChecklistTask
 
-# Register your models here.
+admin.site.register(ChecklistGroup)
+admin.site.register(ChecklistTask)

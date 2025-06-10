@@ -10,7 +10,7 @@ from django.conf import settings
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.decorators import api_view
-from rest_framework import status
+from rest_framework import viewsets
 
 # ROS 2 and Message Imports
 import rclpy
@@ -44,7 +44,34 @@ import threading
 from asgiref.sync import async_to_sync
 
 # Custom Imports
-from . import models
+from .models import *
+from .serialisers import ChecklistGroupSerializer, ChecklistTaskSerializer
+
+
+class ChecklistGroupViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = ChecklistGroup.objects.all()
+    serializer_class = ChecklistGroupSerializer
+
+class ChecklistTaskViewSet(viewsets.ModelViewSet):
+    queryset = ChecklistTask.objects.all()
+    serializer_class = ChecklistTaskSerializer
+
+
+def get_checklist_group(request, group_id):
+    group = ChecklistGroup.objects.get(id=group_id)
+    tasks = group.tasks.all().values("id", "text", "completed", "value")
+    return JsonResponse({"group": group.name, "tasks": list(tasks)})
+
+
+@csrf_exempt
+def update_checklist_task(request, task_id):
+    if request.method == "POST":
+        data = json.loads(request.body)
+        task = ChecklistTask.objects.get(id=task_id)
+        task.completed = data.get("completed", task.completed)
+        task.value = data.get("value", task.value)
+        task.save()
+        return JsonResponse({"status": "success"})
 
 
 fps = 15

@@ -1,0 +1,59 @@
+.checklist-container {
+  background-color: var(--bg-page);
+  color: var(--card-alt-fg);
+  padding: var(--space-lg);
+  border-radius: var(--radius-md);
+}
+
+h2, h4, h5 {
+  color: var(--card-alt-fg);
+}
+
+select.form-select {
+  background-color: var(--card-alt-bg);
+  color: var(--card-alt-fg);
+  border: 1px solid var(--nav-fg);
+}
+
+.list-group-item {
+  background-color: var(--card-alt-bg);
+  color: var(--card-alt-fg);
+  border: none;
+}
+
+.list-group-item-success {
+  background-color: var(--speed-card-bg);
+  color: var(--accent);
+  font-weight: bold;
+}
+
+.list-group-item:hover {
+  background-color: var(--nav-pill-bg);
+}
+
+.list-group-item span {
+  cursor: pointer;
+}
+
+
+.checklist-container {
+  background-color: var(--bg-page);
+  padding: 2rem;
+  border-radius: var(--radius-md);
+  color: var(--card-alt-fg);
+}
+
+.list-group-item {
+  border: none;
+  background-color: var(--card-alt-bg);
+  transition: background-color 0.2s;
+}
+
+.list-group-item:hover {
+  background-color: var(--nav-pill-bg);
+}
+
+.btn-sm {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.85rem;
+}
