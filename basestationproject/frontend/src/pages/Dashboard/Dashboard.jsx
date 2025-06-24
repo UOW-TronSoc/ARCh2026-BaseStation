@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
+import yaml from "js-yaml";
 import "./Dashboard.css";
 
 import VideoFeedCard from "components/VideoFeedCard/VideoFeedCard";
@@ -42,6 +43,8 @@ export default function Dashboard() {
 
   const [speed, setSpeed] = useState(100);
   const [speedEnabled, setSpeedEnabled] = useState(true);
+
+  const [config, setConfig] = useState(null);
 
   /* ------------------------------------------------------------------ */
   /*  REST fetchers (core, battery, radio)                              */
@@ -117,32 +120,37 @@ export default function Dashboard() {
     };
 
     const pollGamepad = () => {
+      if (!config) return; // Wait for config to load
+
       const gp = navigator.getGamepads()[0];
       if (!gp || !speedEnabled) return;
 
-      /* D-pad overrides */
-      const b12 = gp.buttons[12]?.pressed; // up
-      const b13 = gp.buttons[13]?.pressed; // down
-      const b14 = gp.buttons[14]?.pressed; // left
-      const b15 = gp.buttons[15]?.pressed; // right
+      // Use YAML mappings
+      const mappings = config.controllerKeyMappings;
+
+      // D-pad
+      const bUp = gp.buttons[mappings.DialTop]?.pressed;
+      const bDown = gp.buttons[mappings.DialBottom]?.pressed;
+      const bRight = gp.buttons[mappings.DialRight]?.pressed;
+      const bLeft = gp.buttons[mappings.DialLeft]?.pressed;
 
       let left = 0;
       let right = 0;
 
-      if (b12) {
+      if (bUp) {
         left = right = speed;
-      } else if (b13) {
+      } else if (bDown) {
         left = right = -speed;
-      } else if (b15) {
+      } else if (bRight) {
         left = speed;
         right = -speed;
-      } else if (b14) {
+      } else if (bLeft) {
         left = -speed;
         right = speed;
       } else {
-        /* Analogue sticks (axes 2 & 3) */
-        left = Math.round(gp.axes[1] * -speed);
-        right = Math.round(gp.axes[3] * -speed);
+        // Analogue sticks (axes)
+        left = Math.round(gp.axes[mappings.leftAxisUD] * -speed);
+        right = Math.round(gp.axes[mappings.rightAxisUD] * -speed);
       }
 
       if (left !== leftDrive || right !== rightDrive) {
@@ -154,7 +162,13 @@ export default function Dashboard() {
 
     const interval = setInterval(pollGamepad, 50);
     return () => clearInterval(interval);
-  }, [leftDrive, rightDrive, speed, speedEnabled]);
+  }, [leftDrive, rightDrive, speed, speedEnabled, config]);
+
+  useEffect(() => {
+    fetch("/setup.yaml")
+      .then((res) => res.text())
+      .then((text) => setConfig(yaml.load(text)));
+  }, []);
 
   /* ---------------------------------------------------------------------------------- */
   /* (VideoFeedCard, DataDisplayCard, VideoFeedCard, DrivetrainCard, SpeedControlCard ) */

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import "./ArmControl.css";
+import yaml from "js-yaml";
 
 import VideoFeedCard from "components/VideoFeedCard/VideoFeedCard";
 import FeedbackCard from "components/ArmFeedbackCard/ArmFeedbackCard";
@@ -10,6 +11,14 @@ import IncrementalMovementCard from "components/IncrementalMovementCard/Incremen
 import ArmSim from "components/ArmSim/ArmSim";
 
 export default function ArmControl() {
+  const [config, setConfig] = useState(null);
+
+  useEffect(() => {
+    fetch("/setup.yaml")
+      .then((res) => res.text())
+      .then((text) => setConfig(yaml.load(text)));
+  }, []);
+
   const API_BASE = "http://127.0.0.1:8000/api";
   const NUM_CAMS = 5;
   const [camId, setCamId] = useState(0);
@@ -91,17 +100,22 @@ export default function ArmControl() {
 
   // Gamepad polling logic
   useEffect(() => {
+    if (!config) return; // Wait for config to load
+
     const pollGamepad = () => {
       const gp = navigator.getGamepads()[0];
       if (!gp) return;
-  
-      const rt = gp.axes[5] > 0.5;
-      const lt = gp.axes[4] > 0.5;
-  
-      const y = gp.buttons[3]?.pressed;
-      const x = gp.buttons[2]?.pressed;
-      const a = gp.buttons[0]?.pressed;
-  
+
+      // Use YAML mappings
+      const mappings = config.controllerKeyMappings;
+
+      const rt = gp.axes[mappings.rightTrigger] > 0.5;
+      const lt = gp.axes[mappings.leftTrigger] > 0.5;
+
+      const y = gp.buttons[mappings.buttonY]?.pressed;
+      const x = gp.buttons[mappings.buttonX]?.pressed;
+      const a = gp.buttons[mappings.buttonA]?.pressed;
+
       if (y && !yButtonRef.current) {
         setSelectedJoint((prev) => (prev === null ? 0 : (prev + 1) % 6));
       }
@@ -111,13 +125,13 @@ export default function ArmControl() {
       if (a && !aButtonRef.current) {
         setSelectedJoint(0);
       }
-  
+
       yButtonRef.current = y;
       xButtonRef.current = x;
       aButtonRef.current = a;
-  
+
       const newAngles = [...jointAngles];
-  
+
       if (selectedJoint !== null) {
         if (selectedJoint < 3) {
           const speed = jointSpeedOverrides[selectedJoint];
@@ -127,15 +141,15 @@ export default function ArmControl() {
         } else {
           newAngles[selectedJoint] = rt ? 255 : lt ? 0 : -127;
         }
-  
+
         setJointAngles(newAngles);
         sendArmCommand(newAngles);
       }
     };
-  
+
     const interval = setInterval(pollGamepad, 50);
     return () => clearInterval(interval);
-  }, [selectedJoint, jointAngles, jointSpeedOverrides]);
+  }, [config, selectedJoint, jointAngles, jointSpeedOverrides]);
   
 
   // ──────────────────────────────────────────────────────────────
