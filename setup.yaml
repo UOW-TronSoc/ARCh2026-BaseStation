@@ -2,18 +2,25 @@ configVersion: 1.0
 projectName: ARCh2026-BaseStation
 projectDescription: A Django-based web application for the ARCh2026 project, providing a user interface for controlling the robot and monitoring its status.
 projectType: Web Application
+controllerType: 8Bit2c
+connnectedMachine: BaseStation
+os: linux
 
 controllerKeyMappings:
-  W: 0
-  X: 1
-  Y: 2
-  Z: 3
-  leftTrigger: LT
-  rightTrigger: RT
+  DialTop: 12
+  DialBottom: 13
+  DialRight: 14
+  DialLeft: 15
+  leftTrigger: 9
+  rightTrigger: 9
   buttonA: 0
   buttonB: 1
   buttonX: 2
   buttonY: 3
+  leftAxisUD: 1
+  leftAxisLR: 2
+  rightAxisLR: 3
+  rightAxisUD: 3
 
   # buttonId - four axis, two triggers, a, x, y, b separate mappings
 
@@ -35,12 +42,3 @@ rosContainerParams:
   entrypoint: ~/ros2_ws/Dockerfile.ros2_base
   ros2dds: Fast-DDS
   domain_id: 0
-
-documentationLinks:
-  projectDocumentation: 
-  sourceCode: https://github.com/UOW-TronSoc/ARCh2026-BaseStation
-  projectManagement: https://github.com/UOW-TronSoc/ARCh2026-BaseStation/issues
-  rosDocs: https://docs.ros.org/en/humble/index.html
-  dockerDocs: https://docs.docker.com/
-  djangoDocs: https://docs.djangoproject.com/en/stable/
-  djangoRestFrameworkDocs: https://www.django-rest-framework.org/
