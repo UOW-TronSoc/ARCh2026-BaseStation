@@ -1,19 +1,34 @@
-configVersion: 1.0
+configVersion: 1.1
 projectName: ARCh2026-BaseStation
 projectDescription: A Django-based web application for the ARCh2026 project, providing a user interface for controlling the robot and monitoring its status.
 projectType: Web Application
+controllerType: Dualsense
+connectionMachine: Personal
+os: Windows 11
+
 
 controllerKeyMappings:
-  W: 0
-  X: 1
-  Y: 2
-  Z: 3
-  leftTrigger: LT
-  rightTrigger: RT
+  # Dpad mappings
+  DialTop: 0
+  DialBottom: 1
+  DialRight: 2
+  DialLeft: 3
+
+  # Axis mappings
+  leftAxisUD: 1
+  leftAxisRL: 2
+  rightAxisUD: 3
+  rightAxisRL: 4
+
+  # Trigger mappings
+  leftTrigger: 6
+  rightTrigger: 7
+
+  # Button mappings
+  buttonY: 3
+  buttonX: 2
   buttonA: 0
   buttonB: 1
-  buttonX: 2
-  buttonY: 3
 
   # buttonId - four axis, two triggers, a, x, y, b separate mappings
 
