@@ -1,0 +1,25 @@
+# ROS2 Humble base image
+FROM ros:humble-ros-core-jammy
+
+# install colcon, pip, etc.
+RUN apt-get update && \
+    apt-get install -y python3-colcon-common-extensions python3-pip && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /ros2_ws
+
+# 1) only copy in the src folder (and any manifest-level files, if needed)
+COPY basestationproject/ros2_ws/src ./src
+# if you have a workspace-level package.xml or CMakeLists.txt, COPY that too
+
+# 2) clean out any build/install from previous runs
+RUN rm -rf build install log
+
+# 3) source and build
+RUN . /opt/ros/humble/setup.sh && \
+    colcon build --symlink-install
+
+# 4) set entrypoint to source the installs
+ENTRYPOINT ["/bin/bash","-c","source /opt/ros/humble/setup.sh && \
+                             source /ros2_ws/install/setup.sh && exec \"$@\""]
+CMD ["bash"]

@@ -1,0 +1,27 @@
+FROM python:3.10-slim
+
+# 1) Install OS-level build deps
+RUN apt-get update && \
+    apt-get install -y build-essential && \
+    rm -rf /var/lib/apt/lists/*
+
+# 2) Set workdir
+WORKDIR /app
+
+# 3) Copy & install requirements
+COPY basestationproject/requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 4) Copy Django code
+#    - manage.py at /app/manage.py
+#    - your DRF app under /app/backendapi
+#    - your Django project settings under /app/basestationproject
+COPY basestationproject/manage.py ./manage.py
+COPY basestationproject/backendapi ./backendapi
+COPY basestationproject/basestationproject ./basestationproject
+
+# 5) Expose & run
+ENV DJANGO_SETTINGS_MODULE=basestationproject.settings \
+    PYTHONUNBUFFERED=1
+EXPOSE 8000
+CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]

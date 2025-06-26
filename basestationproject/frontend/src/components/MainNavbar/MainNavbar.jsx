@@ -105,6 +105,9 @@ export default function MainNavbar() {
                 <li>
                   <a className="dropdown-item" href="/logs/">Logs</a>
                 </li>
+                <li>
+                  <a className="dropdown-item" href="/checklist/">Checklist</a>
+                </li>
               </ul>
             </li>
 

@@ -1,0 +1,10 @@
+FROM node:18-bullseye
+
+WORKDIR /usr/src/app
+COPY basestationproject/frontend/package.json basestationproject/frontend/package-lock.json ./
+RUN npm ci
+
+COPY basestationproject/frontend/ ./
+
+EXPOSE 3000
+CMD ["npm","run","dev","--","--host","0.0.0.0","--port","3000"]

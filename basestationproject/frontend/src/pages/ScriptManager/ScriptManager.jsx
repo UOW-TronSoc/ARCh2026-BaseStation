@@ -9,7 +9,7 @@ const ScriptManager = () => {
   // fetch running/stopped status
   const fetchStatus = async () => {
     try {
-      const { data } = await axios.get("http://localhost:8080/status");
+      const { data } = await axios.get("http://localhost:8081/status");
       setStatus(data);
     } catch (err) {
       console.error(err);
@@ -25,18 +25,18 @@ const ScriptManager = () => {
 
   const startScript = (name) =>
     axios
-      .post(`http://localhost:8080/start-script/${encodeURIComponent(name)}`)
+      .post(`http://localhost:8081/start-script/${encodeURIComponent(name)}`)
       .then(fetchStatus);
 
   const stopScript = (name) =>
     axios
-      .post(`http://localhost:8080/stop-script/${encodeURIComponent(name)}`)
+      .post(`http://localhost:8081/stop-script/${encodeURIComponent(name)}`)
       .then(fetchStatus);
 
   const startAll = () =>
-    axios.post("http://localhost:8080/start-all").then(fetchStatus);
+    axios.post("http://localhost:8081/start-all").then(fetchStatus);
   const stopAll = () =>
-    axios.post("http://localhost:8080/stop-all").then(fetchStatus);
+    axios.post("http://localhost:8081/stop-all").then(fetchStatus);
 
   // split camera vs other scripts
   const allNames = Object.keys(status);

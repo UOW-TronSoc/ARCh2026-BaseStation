@@ -2,6 +2,7 @@
 from django.http import JsonResponse, StreamingHttpResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET
+from django.views.decorators import gzip
 from django.shortcuts import render
 from django.core.cache import cache
 from django.conf import settings
@@ -74,45 +75,77 @@ def update_checklist_task(request, task_id):
         return JsonResponse({"status": "success"})
 
 
-fps = 15
-
-
 class ROS2Manager:
-    # Singleton ROS2 Manager to handle initialization and node management
+    """
+    Singleton manager responsible for:
+      1. Initializing the ROS2 client library (rclpy).
+      2. Holding a MultiThreadedExecutor to spin all registered nodes.
+      3. Exposing a thread-safe method to add new nodes at runtime.
+    """
+
+    # Holds the sole instance of ROS2Manager
     _instance = None
-    _lock = threading.Lock()  # Ensure thread-safe singleton initialization
+
+    # Lock to prevent race conditions when creating the singleton
+    _lock = threading.Lock()
 
     def __init__(self):
+        """
+        PRIVATE: Only called once under get_instance().
+        - Checks no other instance exists (enforces singleton).
+        - Initializes rclpy if it hasn’t been already.
+        - Creates and starts a background executor thread.
+        """
+        # Prevent direct instantiation if instance already exists
         if ROS2Manager._instance is not None:
             raise Exception("This is a singleton class. Use get_instance() instead.")
 
-        # Initialize ROS2 if not already initialized
+        # Initialize the ROS2 Python client library, if needed
         if not rclpy.ok():
             rclpy.init()
 
-        self.executor = MultiThreadedExecutor(context=rclpy.get_default_context())  # Ensure proper context
-        self.nodes = {}  # Stores all nodes
+        # Create a multithreaded executor tied to the default context
+        self.executor = MultiThreadedExecutor(context=rclpy.get_default_context())
+        # Dictionary to map node names to node instances
+        self.nodes = {}
 
-        # Start executor thread
-        self.executor_thread = threading.Thread(target=self.executor.spin, daemon=True)
+        # Launch the executor’s spin loop on a daemon thread
+        # so it lives for the lifetime of the program
+        self.executor_thread = threading.Thread(
+            target=self.executor.spin,
+            daemon=True
+        )
         self.executor_thread.start()
 
     @classmethod
     def get_instance(cls):
-        # Thread-safe singleton instance creation
+        """
+        Returns the single ROS2Manager instance, creating it if needed.
+        Uses a lock to ensure thread-safe, one-time construction.
+        """
         with cls._lock:
             if cls._instance is None:
                 cls._instance = ROS2Manager()
         return cls._instance
 
     def add_node(self, node):
-        # Add a new node to the executor and manage it
+        """
+        Register a ROS2 node with this manager:
+          1. Store it in the internal dict by its name.
+          2. Add it to the executor so its callbacks fire.
+
+        Args:
+            node (rclpy.node.Node): an instantiated ROS2 node.
+        """
+        # Save for bookkeeping and potential future teardown
         self.nodes[node.get_name()] = node
+        # Hook it into the executor loop
         self.executor.add_node(node)
 
 
-# Initialize Singleton ROS2 Manager
+# On import, immediately instantiate the singleton manager
 ros_manager = ROS2Manager.get_instance()
+
 
 
 # ----------------------------
@@ -122,56 +155,196 @@ ros_manager = ROS2Manager.get_instance()
 # ----------------------------
 
 class MultiCameraSubscriber(Node):
-    # Subscriber to multiple camera topics dynamically
-    def __init__(self, camera_id):
-        super().__init__(f'camera_stream_subscriber_{camera_id}')
-        self.camera_id = camera_id
-        self.subscription = self.create_subscription(
-            CompressedImage, f'/camera_{camera_id}/image_compressed', self.image_callback, fps)
-        self.current_frame = None
-        self.lock = threading.Lock()
+    """
+    A ROS2 node that subscribes to a compressed image topic for one camera ID,
+    decodes incoming JPEG payloads into OpenCV frames, and stores the latest
+    frame safely behind a thread lock.
+    """
 
-    def image_callback(self, msg):
-        np_arr = np.frombuffer(msg.data, np.uint8)
-        frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-        """frame = np_arr.reshape((msg.height, msg.width, 3))
-        with self.lock:
-            self.current_frame = frame"""
+    def __init__(self, camera_id):
+        """
+        Initialize the subscriber node.
+        
+        Args:
+            camera_id (int): Numeric identifier for the camera. Used both to
+                             name the node and to form the subscription topic.
+        """
+        # Name this node uniquely based on camera_id
+        super().__init__(f'camera_stream_subscriber_{camera_id}')
+        
+        # Store camera ID and prepare storage for the latest frame
+        self.camera_id = camera_id
+        self.current_frame = None
+        
+        # Lock to synchronize access to current_frame across threads
+        self.lock = threading.Lock()
+        
+        # Subscribe to the ROS2 topic publishing CompressedImage for this camera
+        #   - Topic name: /camera_<camera_id>/image_compressed
+        #   - QoS depth: 10
+        self.create_subscription(
+            CompressedImage,
+            f'/camera_{camera_id}/image_compressed',
+            self.image_callback,
+            10
+        )
+
+    def image_callback(self, msg: CompressedImage):
+        """
+        Callback executed whenever a new CompressedImage message arrives.
+        Decodes the raw JPEG bytes into an OpenCV BGR image and updates
+        self.current_frame under thread lock.
+        
+        Args:
+            msg (CompressedImage): ROS2 message containing JPEG-compressed data.
+        """
+        # Convert ROS2 message byte buffer into a NumPy array
+        arr = np.frombuffer(msg.data, np.uint8)
+        
+        # Decode JPEG bytes to OpenCV BGR image
+        frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        
+        # If decoding succeeded, update the shared frame safely
         if frame is not None:
             with self.lock:
                 self.current_frame = frame
-    """def image_callback(self, msg):
-        # Process received image frames.
-        np_arr = np.frombuffer(msg.data, np.uint8)
-        frame = np_arr.reshape((msg.height, msg.width, 3))
-        with self.lock:
-            self.current_frame = frame"""
 
-no_of_cams = 5  # Cameras 0 to 4
+
+# -----------------------------------------------------------------------------
+# Initialize and Register Camera Subscriber Nodes
+# -----------------------------------------------------------------------------
+no_of_cams = 5  # Total number of cameras we expect (IDs 0 through 4)
+
 def initialize_cameras():
-    # Initialize all camera subscribers dynamically
+    """
+    Dynamically create and register MultiCameraSubscriber nodes for each camera ID.
+    
+    Returns:
+        dict: Mapping from camera_id to its subscriber node instance.
+    """
     camera_nodes = {}
     for cam_id in range(no_of_cams):
+        # Instantiate subscriber and add it to the global ROS2 manager
         camera_node = MultiCameraSubscriber(cam_id)
         ros_manager.add_node(camera_node)
         camera_nodes[cam_id] = camera_node
+    
     logging.info("✅ All camera nodes initialized!")
     return camera_nodes
 
-
+# Create subscribers at module load
 camera_nodes = initialize_cameras()
-    
 
+
+# -----------------------------------------------------------------------------
+# Single-Frame HTTP View
+# -----------------------------------------------------------------------------
 def get_frame(request, camera_id):
-    # Serve a single frame from a specific camera
+    """
+    HTTP endpoint that returns the most recent frame from one camera as a
+    single JPEG image. If no frame is yet available, returns 204 No Content.
+    
+    Args:
+        request (HttpRequest): Django request object.
+        camera_id (str|int): ID of the camera to fetch (parsed to int).
+    
+    Returns:
+        HttpResponse: JPEG image or 204/500 status.
+    """
     camera_id = int(camera_id)
+    
+    # Check that we have a subscriber and that it has at least one frame
     if camera_id in camera_nodes and camera_nodes[camera_id].current_frame is not None:
+        # Encode the stored OpenCV frame back to JPEG
         with camera_nodes[camera_id].lock:
             success, jpeg = cv2.imencode('.jpg', camera_nodes[camera_id].current_frame)
-            if not success:
-                return HttpResponse(status=500)
+        if not success:
+            # Encoding failed; internal error
+            return HttpResponse(status=500)
+        
+        # Serve the raw JPEG bytes with correct MIME type
         return HttpResponse(jpeg.tobytes(), content_type="image/jpeg")
-    return HttpResponse(status=204)  # No content if no frame is available
+    
+    # No frame available yet
+    return HttpResponse(status=204)
+
+
+# -----------------------------------------------------------------------------
+# Continuous MJPEG Streaming View
+# -----------------------------------------------------------------------------
+@gzip.gzip_page  # Optional gzip compression for the multipart stream
+def mjpeg_stream(request, camera_id):
+    """
+    HTTP endpoint that streams an MJPEG (multipart/x-mixed-replace) response
+    for a given camera, pushing new frames as they arrive.
+    
+    Args:
+        request (HttpRequest): Django request object.
+        camera_id (str|int): ID of the camera to stream (parsed to int).
+    
+    Returns:
+        StreamingHttpResponse: Keeps connection open, sending frames until
+        client disconnects.
+    """
+    camera_id = int(camera_id)
+    if camera_id not in camera_nodes:
+        # Unknown camera ID
+        return HttpResponse(status=404)
+
+    boundary = "--frame"
+    
+    # Create a streaming response that yields JPEG frames in a loop
+    response = StreamingHttpResponse(
+        _frame_generator(camera_nodes[camera_id], boundary),
+        content_type=f'multipart/x-mixed-replace; boundary={boundary}'
+    )
+    
+    # Prevent caching and ensure the client/proxy closes the socket on exit
+    response['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response['Pragma']        = 'no-cache'
+    response['Expires']       = '0'
+    response['Connection']    = 'close'
+    
+    return response
+
+
+def _frame_generator(camera_node, boundary):
+    """
+    MJPEG generator that yields *every* new frame immediately.
+    """
+    last_ts = 0.0
+    try:
+        while True:
+            # grab the frame under lock
+            with camera_node.lock:
+                frame = camera_node.current_frame
+
+            if frame is None:
+                # nothing yet—briefly wait
+                time.sleep(0.01)
+                continue
+
+            # we can encode and yield immediately
+            success, jpeg = cv2.imencode('.jpg', frame)
+            if not success:
+                continue
+
+            # yield boundary + JPEG
+            yield (
+                f"{boundary}\r\n"
+                "Content-Type: image/jpeg\r\n\r\n"
+            ).encode('utf-8') + jpeg.tobytes() + b"\r\n"
+
+            # reset last_ts so we don't wait for frame-rate
+            last_ts = time.time()
+
+            # and loop right back to check for the next new frame
+    except (BrokenPipeError, ConnectionResetError, GeneratorExit):
+        # client closed—exit quietly
+        return
+
+
+
 
 
 # ----------------------------
