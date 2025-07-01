@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
+import "./ArmControl.css";
+import yaml from "js-yaml";
 
 import VideoFeedCard from "components/VideoFeedCard/VideoFeedCard";
 import IncrementalMovementCard from "components/IncrementalMovementCard/IncrementalMovementCard";
@@ -9,6 +11,14 @@ import LocationPresetCard from "components/LocationPresetCard/LocationPresetCard
 
 
 export default function ArmControl() {
+  const [config, setConfig] = useState(null);
+
+  useEffect(() => {
+    fetch("/setup.yaml")
+      .then((res) => res.text())
+      .then((text) => setConfig(yaml.load(text)));
+  }, []);
+
   document.title = "Arm Control"
   const API_BASE = "http://127.0.0.1:8000/api";
   const NUM_CAMS = 5;
@@ -172,18 +182,22 @@ export default function ArmControl() {
 
   // ─── Gamepad polling: send per‐joint velocity commands ─────────────────────────
   useEffect(() => {
+    if (!config) return; // Wait for config to load
+
     const pollGamepad = () => {
       const gp = navigator.getGamepads()[0];
       if (!gp) return;
 
-      const rt = gp.axes[5] > 0.5;
-      const lt = gp.axes[4] > 0.5;
+      // Use YAML mappings
+      const mappings = config.controllerKeyMappings;
 
-      const y = gp.buttons[3]?.pressed;
-      const x = gp.buttons[2]?.pressed;
-      const a = gp.buttons[0]?.pressed;
+      const rt = gp.axes[mappings.rightTrigger] > 0.5;
+      const lt = gp.axes[mappings.leftTrigger] > 0.5;
 
-      // Cycle joint selection with Y/X/A among 6 joints (0..5)
+      const y = gp.buttons[mappings.buttonY]?.pressed;
+      const x = gp.buttons[mappings.buttonX]?.pressed;
+      const a = gp.buttons[mappings.buttonA]?.pressed;
+
       if (y && !yButtonRef.current) {
         setSelectedJoint((prev) => (prev === null ? 0 : (prev + 1) % 6));
       }
@@ -225,15 +239,18 @@ export default function ArmControl() {
         } else if (lt) {
           velCmd[selectedJoint] = -speed;
         }
+  
+        setJointAngles(newAngles);
+        sendArmCommand(newAngles);
       }
-
-      // Always send something, even zeros, to stop movement when triggers release
-      sendVelocityCommand(velCmd);
     };
+  
+    const interval = setInterval(pollGamepad, 50);
+    return () => clearInterval(interval);
+  }, [selectedJoint, jointAngles, jointSpeedOverrides]);
+  
 
-    const id = setInterval(pollGamepad, 50);
-    return () => clearInterval(id);
-  }, [selectedJoint, jointAngles, jointSpeedOverrides, isLocked, isHorizontal]);
+  // ──────────────────────────────────────────────────────────────
 
   return (
     <div className="container my-4">
