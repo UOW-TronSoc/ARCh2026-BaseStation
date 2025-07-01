@@ -1,22 +1,21 @@
 import React, { useState } from "react";
 import styles from "./IncrementalMovementCard.module.css";
-import axios from "axios";
 
 const jointTargets = ["Theta1", "Theta2", "Theta3", "Theta4", "Theta5", "EE"];
 const worldTargets = ["X", "Y", "Z", "Alpha", "Beta", "EE"];
 
-export default function IncrementalMovementCard({ api, onIncrement}) {
+export default function IncrementalMovementCard({ onIncrement }) {
   const [mode, setMode] = useState("joint");
   const [selected, setSelected] = useState(null);
   const [value, setValue] = useState("");
 
   const handleModeChange = (newMode) => {
     setMode(newMode);
-    setSelected(null);  // reset target selection
+    setSelected(null);
     setValue("");
   };
 
-  const handleSend = async () => {
+  const handleSend = () => {
     if (!selected || value === "") return;
 
     const numericValue = parseFloat(value);
@@ -25,21 +24,11 @@ export default function IncrementalMovementCard({ api, onIncrement}) {
       return;
     }
 
-    try {
-      await axios.post(`${api}/arm-increment-command/`, {
-        mode: mode,
-        target: selected,
-        value: numericValue
-      });
-      setValue(""); // clear input
-      
-      if (onIncrement) {
-        onIncrement(mode, selected, numericValue);
-      }
-      
-    } catch (err) {
-      console.error("Failed to send incremental movement:", err.message);
+    // Invoke parent callback only; Django/ROS2 integration will happen there
+    if (onIncrement) {
+      onIncrement(mode, selected, numericValue);
     }
+    setValue("");
   };
 
   const targets = mode === "joint" ? jointTargets : worldTargets;
@@ -51,13 +40,17 @@ export default function IncrementalMovementCard({ api, onIncrement}) {
       {/* Mode Switch */}
       <div className="d-flex justify-content-center gap-2 mb-3">
         <button
-          className={`btn ${mode === "joint" ? styles.activeButton : styles.inactiveButton}`}
+          className={`btn ${
+            mode === "joint" ? styles.activeButton : styles.inactiveButton
+          }`}
           onClick={() => handleModeChange("joint")}
         >
           Joint
         </button>
         <button
-          className={`btn ${mode === "world" ? styles.activeButton : styles.inactiveButton}`}
+          className={`btn ${
+            mode === "world" ? styles.activeButton : styles.inactiveButton
+          }`}
           onClick={() => handleModeChange("world")}
         >
           World
@@ -69,7 +62,9 @@ export default function IncrementalMovementCard({ api, onIncrement}) {
         {targets.map((t) => (
           <button
             key={t}
-            className={`btn ${selected === t ? styles.selectedButton : styles.targetButton}`}
+            className={`btn ${
+              selected === t ? styles.selectedButton : styles.targetButton
+            }`}
             onClick={() => setSelected(t)}
           >
             {t}
