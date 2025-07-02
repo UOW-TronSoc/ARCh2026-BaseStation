@@ -1,27 +1,33 @@
-FROM python:3.10-slim
+# Dockerfile.django
+FROM ros:humble-ros-core-jammy
 
-# 1) Install OS-level build deps
+# 1) Install pip, build tools, Django deps
 RUN apt-get update && \
-    apt-get install -y build-essential && \
-    rm -rf /var/lib/apt/lists/*
+    apt-get install -y \
+      python3-pip \
+      python-is-python3 \
+      build-essential \
+      libgl1-mesa-glx \
+      libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
 
-# 2) Set workdir
+# 2) Make sure rclpy & our workspace are sourced at runtime
+#    and mount the workspace volume at /ros2_ws
 WORKDIR /app
-
-# 3) Copy & install requirements
 COPY basestationproject/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 4) Copy Django code
-#    - manage.py at /app/manage.py
-#    - your DRF app under /app/backendapi
-#    - your Django project settings under /app/basestationproject
+# 3) Copy your Django project
 COPY basestationproject/manage.py ./manage.py
-COPY basestationproject/backendapi ./backendapi
 COPY basestationproject/basestationproject ./basestationproject
+COPY basestationproject/backendapi ./backendapi
 
-# 5) Expose & run
+# 4) Ensure the ROS setup scripts get sourced before Django runs
 ENV DJANGO_SETTINGS_MODULE=basestationproject.settings \
     PYTHONUNBUFFERED=1
+
+ENTRYPOINT ["/bin/bash","-c", \
+  "source /opt/ros/humble/setup.sh && \
+   source /ros2_ws/install/setup.sh && \
+   exec python3 manage.py runserver 0.0.0.0:8000"]
 EXPOSE 8000
-CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]

@@ -29,6 +29,7 @@ services:
     volumes:
       - django_static:/app/static
       - django_media:/app/media
+      - ros2_build:/ros2_ws
     ports:
       - "8000:8000"
 
@@ -51,6 +52,8 @@ services:
       - basestation_net
     ports:
       - "8080:8080"
+    volumes:
+      - ros2_build:/ros2_ws
 
   fastapi_process:
     build:
@@ -64,6 +67,9 @@ services:
       - basestation_net
     ports:
       - "8081:8081"
+    volumes:
+      - ros2_build:/ros2_ws
+
 
   frontend:
     build:

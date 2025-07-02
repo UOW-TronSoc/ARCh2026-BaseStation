@@ -1,10 +1,31 @@
-FROM python:3.10-slim
+# Dockerfile.process
+FROM ros:humble-ros-core-jammy
+
+RUN apt-get update && \
+    apt-get install -y \
+      python3-pip \
+      python-is-python3 \
+      libgl1-mesa-glx \
+      libglib2.0-0 \
+      python3-opencv \
+      ros-humble-cv-bridge \
+      ros-humble-image-transport && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir fastapi uvicorn
 
 WORKDIR /app
+
+# install python deps
 COPY process_manager/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY process_manager/main.py ./
 
+COPY robot_controller /app/robot_controller
+
+ENTRYPOINT ["/bin/bash","-c", \
+  "source /opt/ros/humble/setup.sh && \
+   source /ros2_ws/install/setup.sh && \
+   exec uvicorn main:app --host 0.0.0.0 --port 8081 --reload"]
 EXPOSE 8081
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8081", "--reload"]

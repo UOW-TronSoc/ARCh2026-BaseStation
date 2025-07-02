@@ -6,7 +6,7 @@ from pathlib import Path
 
 # where your custom ROS 2 msgs live
 custom_lib_path = os.path.abspath(
-    "../basestationproject/ros2_ws/install/custom_msgs/lib"
+    "basestationproject/ros2_ws/install/custom_msgs/lib"
 )
 
 app = FastAPI()
@@ -20,7 +20,7 @@ app.add_middleware(
 
 # --- dynamically discover all camera videos ---
 camera_videos_dir = Path(
-    os.path.abspath("../robot_controller/camera/videos")
+    os.path.abspath("robot_controller/camera/videos")
 )
 video_files = sorted(camera_videos_dir.glob("video*.mp4"))
 
@@ -30,7 +30,7 @@ for idx, video in enumerate(video_files):
     name = f"Camera {idx}"
     # absolute path to your publisher script
     publisher_py = os.path.abspath(
-        "../robot_controller/camera/camera_video_publisher.py"
+        "robot_controller/camera/camera_video_publisher.py"
     )
     scripts[name] = (
         f"{publisher_py} --camera-id {idx} --video-path {video}"
@@ -38,12 +38,12 @@ for idx, video in enumerate(video_files):
 
 # then all your other publishers
 static = {
-    "Battery": "../robot_controller/battery/battery_publisher.py",
-    "Radio": "../robot_controller/radio/radio_feedback_pub.py",
-    "Core pub": "../robot_controller/drive_control/core_publisher.py",
-    "Arm Feedback": "../robot_controller/arm/test_arm_feedback_publisher.py",
-    "Fake Joint Integrator": "../robot_controller/arm/fake_integrator.py",
-    "Logger": "../robot_controller/log/logger.py",
+    "Battery": "robot_controller/battery/battery_publisher.py",
+    "Radio": "robot_controller/radio/radio_feedback_pub.py",
+    "Core pub": "robot_controller/drive_control/core_publisher.py",
+    "Arm Feedback": "robot_controller/arm/test_arm_feedback_publisher.py",
+    "Fake Joint Integrator": "robot_controller/arm/fake_integrator.py",
+    "Logger": "robot_controller/log/logger.py",
 }
 for k, v in static.items():
     scripts[k] = v

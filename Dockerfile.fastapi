@@ -1,4 +1,10 @@
-FROM python:3.10-slim
+# Dockerfile.fastapi
+FROM ros:humble-ros-core-jammy
+
+RUN apt-get update && \
+    apt-get install -y python3-pip && \
+    rm -rf /var/lib/apt/lists/* && \
+    pip install fastapi
 
 WORKDIR /app
 COPY basestationproject/fastapi_server/requirements.txt ./
@@ -6,5 +12,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY basestationproject/fastapi_server/main.py ./
 
+ENTRYPOINT ["/bin/bash","-c", \
+  "source /opt/ros/humble/setup.sh && \
+   source /ros2_ws/install/setup.sh && \
+   exec uvicorn main:app --host 0.0.0.0 --port 8080 --reload"]
 EXPOSE 8080
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080", "--reload"]
