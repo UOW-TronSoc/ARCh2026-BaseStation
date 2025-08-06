@@ -63,11 +63,18 @@ export default function Dashboard() {
         current_draw: data.current_draw ?? 0,
         temperature: data.temperature ?? 0,
         timestamp: data.timestamp ?? 0,
+        total_voltage: data.total_voltage ?? 0,
+        measured_voltage: data.measured_voltage ?? 0,
+        capacity: data.capacity ?? 0,
+        cell_voltages: data.cell_voltages ?? [],
+        charge_state: data.charge_state ?? 0,
+        fault_bits: data.fault_bits ?? [],
       });
     } catch (err) {
       console.error("Failed to fetch battery status:", err.message);
     }
   };
+
 
   const fetchRadio = async () => {
     try {

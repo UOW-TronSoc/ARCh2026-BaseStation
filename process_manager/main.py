@@ -67,7 +67,7 @@ def start_script(script_name: str):
 
     cmd = (
         f"bash -c 'export DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH:{custom_lib_path} && "
-        f"python3 {scripts[script_name]}'"
+        f"exec python3 {scripts[script_name]}'"
     )
     processes[script_name] = subprocess.Popen(
         cmd,
@@ -75,6 +75,7 @@ def start_script(script_name: str):
         executable='/bin/bash',
         preexec_fn=os.setsid
     )
+
 
     return {"status": "started"}
 
@@ -84,7 +85,7 @@ def stop_script(script_name: str):
         return {"status": "not running"}
     p = processes[script_name]
     # send SIGINT to the whole process group
-    os.killpg(os.getpgid(p.pid), signal.SIGINT)
+    os.killpg(os.getpgid(p.pid), signal.SIGTERM)
     p.wait()
     del processes[script_name]
     return {"status": "stopped"}

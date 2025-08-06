@@ -42,6 +42,7 @@ import httpx
 import json
 import time
 import threading
+import traceback
 from asgiref.sync import async_to_sync
 
 # Custom Imports
@@ -935,24 +936,37 @@ def battery_feedback_view(request):
     battery_msg = battery_info_sub.get_latest_data()
     bms_msg = bms_status_sub.get_latest_data()
 
-    if not battery_msg or not bms_msg:
+    if battery_msg is None or bms_msg is None:
         return JsonResponse({"error": "Battery data not yet available"}, status=503)
 
-    average_temp = sum(bms_msg.temps) / len(bms_msg.temps) if bms_msg.temps else 0
+    try:
+        temps = [int(t) for t in bms_msg.temps]
+        cell_voltages = [int(v) for v in bms_msg.cell_voltages]
+        fault_bits = [int(f) for f in bms_msg.fault_bits]
 
-    data = {
-        "charge_pct": battery_msg.soc,
-        "current_draw": battery_msg.current,
-        "temperature": average_temp,
-        "timestamp": int(time.time()),
-        "total_voltage": battery_msg.total_voltage,
-        "measured_voltage": battery_msg.measured_voltage,
-        "capacity": battery_msg.capacity,
-        "cell_voltages": bms_msg.cell_voltages,
-        "charge_state": bms_msg.charge_state,
-        "fault_bits": bms_msg.fault_bits,
-    }
-    return JsonResponse(data)
+        average_temp = sum(temps) / len(temps) if temps else 0
+
+        data = {
+            "charge_pct": float(battery_msg.soc),
+            "current_draw": float(battery_msg.current),
+            "temperature": average_temp,
+            "timestamp": int(time.time()),
+            "total_voltage": float(battery_msg.total_voltage),
+            "measured_voltage": float(battery_msg.measured_voltage),
+            "capacity": int(battery_msg.capacity),
+            "cell_voltages": cell_voltages,
+            "charge_state": int(bms_msg.charge_state),
+            "fault_bits": fault_bits,
+        }
+
+        return JsonResponse(data)
+
+    except Exception as e:
+        traceback.print_exc()
+        return JsonResponse(
+            {"error": f"Exception occurred: {str(e)}"}, status=500
+        )
+
 
 """class BatteryFeedbackSubscriber(Node):
     def __init__(self):
