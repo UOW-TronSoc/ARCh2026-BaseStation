@@ -10,6 +10,7 @@ export default function MainNavbar() {
     current_draw: 0,
     temperature: 0,
   });
+  
 
   const fetchBattery = async () => {
     try {

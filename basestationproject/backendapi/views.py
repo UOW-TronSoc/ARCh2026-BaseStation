@@ -21,7 +21,7 @@ import logging
 
 try:
     from sensor_msgs.msg import Image, CompressedImage, JointState
-    from custom_msgs.msg import DrivetrainFeedback, ScienceFeedback, ScienceControl, RadioFeedback, BatteryFeedback, CoreFeedback, ArmIncrementCommand
+    from custom_msgs.msg import DrivetrainFeedback, ScienceFeedback, ScienceControl, RadioFeedback, CoreFeedback, BmsStatus, BatteryInfo
     from std_msgs.msg import String, Bool, Empty
 
     ROS_IMPORTS_AVAILABLE = True
@@ -689,7 +689,7 @@ ros_manager.add_node(arm_command_node)
 ros_manager.add_node(arm_feedback_node)
 
 
-# ─── Django Views ────────────────────────────────────────────────────────────────
+# ─── Send commands to interface ────────────────────────────────────────────────────────────────
 @csrf_exempt
 def send_arm_command(request):
     """
@@ -841,7 +841,120 @@ def get_radio_feedback(request):
 # Battery Feedback & Sub
 
 # ----------------------------
-class BatteryFeedbackSubscriber(Node):
+
+class BatteryInfoSubscriber(Node):
+    def __init__(self):
+        super().__init__("battery_info_subscriber")
+        self.latest_msg = None
+        self.subscription = self.create_subscription(
+            BatteryInfo,
+            "/battery_info",
+            self.listener_callback,
+            10,
+        )
+
+    def listener_callback(self, msg):
+        self.latest_msg = msg
+        self.get_logger().info("BatteryInfo updated")
+
+    def get_latest_data(self):
+        return self.latest_msg
+
+
+class BmsStatusSubscriber(Node):
+    def __init__(self):
+        super().__init__("bms_status_subscriber")
+        self.latest_msg = None
+        self.subscription = self.create_subscription(
+            BmsStatus,
+            "/bms_status",
+            self.listener_callback,
+            10,
+        )
+
+    def listener_callback(self, msg):
+        self.latest_msg = msg
+        self.get_logger().info("BmsStatus updated")
+
+    def get_latest_data(self):
+        return self.latest_msg
+
+battery_info_sub = BatteryInfoSubscriber()
+bms_status_sub = BmsStatusSubscriber()
+
+ros_manager.add_node(battery_info_sub)
+ros_manager.add_node(bms_status_sub)
+
+
+class BatteryInfoSubscriber(Node):
+    def __init__(self):
+        super().__init__("battery_info_subscriber")
+        self.latest_msg = None
+        self.subscription = self.create_subscription(
+            BatteryInfo,
+            "/battery_info",
+            self.listener_callback,
+            10,
+        )
+
+    def listener_callback(self, msg):
+        self.latest_msg = msg
+        self.get_logger().info("BatteryInfo updated")
+
+    def get_latest_data(self):
+        return self.latest_msg
+
+
+class BmsStatusSubscriber(Node):
+    def __init__(self):
+        super().__init__("bms_status_subscriber")
+        self.latest_msg = None
+        self.subscription = self.create_subscription(
+            BmsStatus,
+            "/bms_status",
+            self.listener_callback,
+            10,
+        )
+
+    def listener_callback(self, msg):
+        self.latest_msg = msg
+        self.get_logger().info("BmsStatus updated")
+
+    def get_latest_data(self):
+        return self.latest_msg
+
+
+battery_info_sub = BatteryInfoSubscriber()
+bms_status_sub = BmsStatusSubscriber()
+
+ros_manager.add_node(battery_info_sub)
+ros_manager.add_node(bms_status_sub)
+
+
+def battery_feedback_view(request):
+    battery_msg = battery_info_sub.get_latest_data()
+    bms_msg = bms_status_sub.get_latest_data()
+
+    if not battery_msg or not bms_msg:
+        return JsonResponse({"error": "Battery data not yet available"}, status=503)
+
+    average_temp = sum(bms_msg.temps) / len(bms_msg.temps) if bms_msg.temps else 0
+
+    data = {
+        "charge_pct": battery_msg.soc,
+        "current_draw": battery_msg.current,
+        "temperature": average_temp,
+        "timestamp": int(time.time()),
+        "total_voltage": battery_msg.total_voltage,
+        "measured_voltage": battery_msg.measured_voltage,
+        "capacity": battery_msg.capacity,
+        "cell_voltages": bms_msg.cell_voltages,
+        "charge_state": bms_msg.charge_state,
+        "fault_bits": bms_msg.fault_bits,
+    }
+    return JsonResponse(data)
+
+"""class BatteryFeedbackSubscriber(Node):
     def __init__(self):
         super().__init__('battery_feedback_subscriber')
         try:
@@ -880,7 +993,7 @@ def get_battery_feedback(request):
         logging.error(f"Error retrieving battery data: {e}")
         return JsonResponse({"error": "Failed to retrieve battery data"}, status=500)
 
-
+"""
 
 # ----------------------------
 

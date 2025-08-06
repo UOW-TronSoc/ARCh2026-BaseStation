@@ -33,7 +33,8 @@ urlpatterns = [
     path("radio-feedback/", get_radio_feedback, name="radio_feedback"),
     
     # battery
-    path('battery-feedback/', get_battery_feedback, name='battery-feedback'),
+    path("api/battery-feedback", battery_feedback_view, name='battery-feedback'),
+
     
     #logs
     path("list-logs/", list_logs),

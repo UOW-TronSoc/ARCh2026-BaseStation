@@ -23,6 +23,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/ESP32Sensors.msg"
   "msg/RadioFeedback.msg"
   "msg/BatteryFeedback.msg"
+  "msg/BatteryInfo.msg"
+  "msg/BmsStatus.msg"
   "msg/CoreControl.msg"
   "msg/CoreFeedback.msg"
   "msg/ArmIncrementCommand.msg"

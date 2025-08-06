@@ -29,14 +29,12 @@ export default function DataDisplayCard({ radio, battery, pitch, roll }) {
         </div>
         <div className="d-flex justify-content-between mt-3">
           <span>Temperature<br /><strong>{battery.temperature.toFixed(1)} °C</strong></span>
-          <span>Last Update<br /><strong>{new Date(battery.timestamp*1000).toLocaleTimeString()}</strong></span>
+          <span>Total Voltage<br /><strong>{battery.total_voltage?.toFixed(2)} V</strong></span>
         </div>
-      </section>
-
-      {/* Pitch / Roll */}
-      <section className={`d-flex justify-content-between ${styles.section}`}>
-        <span>Pitch<br /><strong>{pitch.toFixed(2)} °</strong></span>
-        <span>Roll<br /><strong>{roll.toFixed(2)} °</strong></span>
+        <div className="d-flex justify-content-between mt-3">
+          <span>Measured Voltage<br /><strong>{battery.measured_voltage?.toFixed(2)} V</strong></span>
+          <span>Capacity<br /><strong>{battery.capacity} mAh</strong></span>
+        </div>
       </section>
     </div>
   );
