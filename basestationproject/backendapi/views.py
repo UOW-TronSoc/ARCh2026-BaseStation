@@ -21,7 +21,7 @@ import logging
 
 try:
     from sensor_msgs.msg import Image, CompressedImage, JointState
-    from custom_msgs.msg import DrivetrainFeedback, ScienceFeedback, ScienceControl, RadioFeedback, CoreFeedback, BmsStatus, BatteryInfo
+    from custom_msgs.msg import ScienceFeedback, ScienceControl, RadioFeedback, CoreFeedback, BmsStatus, BatteryInfo
     from std_msgs.msg import String, Bool, Empty
 
     ROS_IMPORTS_AVAILABLE = True
@@ -353,7 +353,7 @@ def _frame_generator(camera_node, boundary):
 # Drivetrain Feedback(only)
 
 # ----------------------------
-
+"""
 class DrivetrainFeedbackSubscriber(Node):
     # Subscriber to Drivetrain Feedback topic
     def __init__(self):
@@ -413,7 +413,7 @@ def get_drivetrain_feedback(request):
 feedback_node = DrivetrainFeedbackSubscriber()
 ros_manager.add_node(feedback_node)
 
-
+"""
 
 # ----------------------------
 

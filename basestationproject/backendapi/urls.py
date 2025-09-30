@@ -14,7 +14,7 @@ urlpatterns = [
     
     path('video_feed/<int:camera_id>/', get_frame, name='video_feed'),
 
-    path('drivetrain-feedback/', get_drivetrain_feedback, name='drivetrain-feedback'),
+    # path('drivetrain-feedback/', get_drivetrain_feedback, name='drivetrain-feedback'),
     path('core-feedback/', get_core_feedback, name='core-feedback'),
 
 

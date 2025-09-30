@@ -1,7 +1,7 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef } from "react";
 import styles from "./SpeedControlCard.module.css";
 
-export default function SpeedControlCard({ speed, setSpeed, enabled, setEnabled }) {
+export default function SpeedControlCard({ speed, setSpeed, enabled, setEnabled, controllerInfo }) {
   const svgRef = useRef(null);
   const isDragging = useRef(false);
 
@@ -102,6 +102,16 @@ export default function SpeedControlCard({ speed, setSpeed, enabled, setEnabled 
           <text x={label0.x} y={label0.y + 4} className={styles.label}>0</text>
           <text x={label100.x} y={label100.y + 4} className={styles.label}>100</text>
         </svg>
+
+        <div className="mt-3 text-center">
+          <div><strong>Active Device:</strong> {controllerInfo?.name ?? "None"}</div>
+          {controllerInfo?.type === "logitech-extreme-3d" &&
+            typeof controllerInfo?.throttle === "number" && (
+              <div className="small text-muted">
+                Throttle: {Math.round(controllerInfo.throttle * 100)}%
+              </div>
+            )}
+        </div>
       </div>
     </div>
   );

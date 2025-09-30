@@ -42,6 +42,18 @@ export default function DataDisplayCard({ radio, battery, pitch, roll }) {
         ))}
       </section>
 
+      {/* Orientation */}
+      <section className={styles.section}>
+        <div className="d-flex justify-content-between">
+          <span>Pitch</span>
+          <strong>{safeNumber(pitch, 2)}°</strong>
+        </div>
+        <div className="d-flex justify-content-between mt-2">
+          <span>Roll</span>
+          <strong>{safeNumber(roll, 2)}°</strong>
+        </div>
+      </section>
+
       {/* Battery */}
       <section className={styles.section}>
         {[

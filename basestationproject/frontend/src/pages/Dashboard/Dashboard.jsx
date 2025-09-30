@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import axios from "axios";
 import "./Dashboard.css";
 
@@ -6,6 +6,38 @@ import VideoFeedCard from "components/VideoFeedCard/VideoFeedCard";
 import DataDisplayCard from "components/DataDisplayCard/DataDisplayCard";
 import DrivetrainCard from "components/DrivetrainCard/DrivetrainCard";
 import SpeedControlCard from "components/SpeedControlCard/SpeedControlCard";
+
+const EPSILON = 0.01;
+const MAX_TWIST = 15; // absolute range for linear/Angular components
+const CONTROL_KEYS = new Set(["w", "s", "a", "d", "q", "e"]);
+
+const ZERO_VECTOR = { x: 0, y: 0, z: 0 };
+
+const vectorsAlmostEqual = (a, b, epsilon = EPSILON) =>
+  Math.abs(a.x - b.x) < epsilon &&
+  Math.abs(a.y - b.y) < epsilon &&
+  Math.abs(a.z - b.z) < epsilon;
+
+const twistAlmostEqual = (a, b, epsilon = EPSILON) =>
+  vectorsAlmostEqual(a.linear, b.linear, epsilon) &&
+  vectorsAlmostEqual(a.angular, b.angular, epsilon);
+
+// Apply 30% deadzone in axis space [-1,1], with rescale after the deadzone.
+const applyAxisDeadzone = (value, deadzone = 0.3) => {
+  const v = typeof value === 'number' ? value : 0;
+  const a = Math.abs(v);
+  if (a < deadzone) return 0;
+  return Math.sign(v) * (a - deadzone) / (1 - deadzone);
+};
+
+const identifyControllerType = (id = "") => {
+  const lower = id.toLowerCase();
+  if (lower.includes("046d") && lower.includes("c215")) return "logitech-extreme-3d";
+  if (lower.includes("logitech") && lower.includes("extreme") && lower.includes("3d")) {
+    return "logitech-extreme-3d";
+  }
+  return "generic-gamepad";
+};
 
 export default function Dashboard() {
   /* ------------------------------------------------------------------ */
@@ -48,11 +80,56 @@ export default function Dashboard() {
     sent: "N/A",
   });
 
-  const [leftDrive, setLeftDrive] = useState(0);
-  const [rightDrive, setRightDrive] = useState(0);
-
   const [speed, setSpeed] = useState(100);
   const [speedEnabled, setSpeedEnabled] = useState(true);
+
+  const [keyboardLinear, setKeyboardLinear] = useState({ ...ZERO_VECTOR });
+  const [keyboardAngular, setKeyboardAngular] = useState({ ...ZERO_VECTOR });
+  const [gamepadLinear, setGamepadLinear] = useState({ ...ZERO_VECTOR });
+  const [gamepadAngular, setGamepadAngular] = useState({ ...ZERO_VECTOR });
+  const [controllerInfo, setControllerInfo] = useState({
+    name: "None",
+    type: null,
+    throttle: null,
+  });
+
+  const pressedKeysRef = useRef(new Set());
+  const speedRef = useRef(speed);
+  const lastSentTwistRef = useRef({
+    linear: { ...ZERO_VECTOR },
+    angular: { ...ZERO_VECTOR },
+  });
+
+  const recalcKeyboardTwist = useCallback(() => {
+    const scale = (speedRef.current / 100) * MAX_TWIST;
+    const keys = pressedKeysRef.current;
+
+    const nextLinear = { ...ZERO_VECTOR };
+    const nextAngular = { ...ZERO_VECTOR };
+
+    if (keys.has("w")) nextLinear.x += scale;
+    if (keys.has("s")) nextLinear.x -= scale;
+    if (keys.has("q")) nextLinear.y += scale;
+    if (keys.has("e")) nextLinear.y -= scale;
+    if (keys.has("a")) nextAngular.z += scale;
+    if (keys.has("d")) nextAngular.z -= scale;
+
+    setKeyboardLinear((prev) => (vectorsAlmostEqual(prev, nextLinear) ? prev : nextLinear));
+    setKeyboardAngular((prev) => (vectorsAlmostEqual(prev, nextAngular) ? prev : nextAngular));
+  }, []);
+
+  const updateControllerInfo = useCallback((info) => {
+    setControllerInfo((prev) => {
+      if (
+        prev.name === info.name &&
+        prev.type === info.type &&
+        (prev.throttle ?? null) === (info.throttle ?? null)
+      ) {
+        return prev;
+      }
+      return info;
+    });
+  }, []);
 
   /* ------------------------------------------------------------------ */
   /*  REST fetchers (core, battery, radio)                              */
@@ -109,6 +186,42 @@ export default function Dashboard() {
 
   const refresh_rate = 500; //ms
 
+  useEffect(() => {
+    speedRef.current = speed;
+    recalcKeyboardTwist();
+  }, [speed, recalcKeyboardTwist]);
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      const key = event.key.toLowerCase();
+      if (!CONTROL_KEYS.has(key)) return;
+      event.preventDefault();
+      const keys = pressedKeysRef.current;
+      if (!keys.has(key)) {
+        keys.add(key);
+        recalcKeyboardTwist();
+      }
+    };
+
+    const handleKeyUp = (event) => {
+      const key = event.key.toLowerCase();
+      if (!CONTROL_KEYS.has(key)) return;
+      event.preventDefault();
+      const keys = pressedKeysRef.current;
+      if (keys.delete(key)) {
+        recalcKeyboardTwist();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
+  }, [recalcKeyboardTwist]);
+
   /* Poll every 2 s */
   useEffect(() => {
     fetchCoreFeedback();
@@ -117,67 +230,157 @@ export default function Dashboard() {
     const timer = setInterval(() => {
       fetchCoreFeedback();
       fetchBattery();
+
+      
       fetchRadio();
     }, refresh_rate);
     return () => clearInterval(timer);
   }, []);
 
   /* ------------------------------------------------------------------ */
-  /*  Game-pad polling → drivetrain commands                            */
+  /*  Gamepad + keyboard input → Twist commands                         */
   /* ------------------------------------------------------------------ */
+
   useEffect(() => {
     document.title = "Dashboard";
+  }, []);
 
-    const sendCommand = async (left, right) => {
-      try {
-        await axios.post("http://localhost:5000/command", {
-          left_drive: left,
-          right_drive: right,
-        });
-      } catch (err) {
-        console.error("Failed to send drive command:", err.message);
-      }
-    };
+  const sendTwistCommand = useCallback(async (payload) => {
+    try {
+      await axios.post("http://localhost:8080/command", payload);
+    } catch (err) {
+      console.error("Failed to send drive command:", err.message);
+    }
+  }, []);
 
+  useEffect(() => {
     const pollGamepad = () => {
       const gp = navigator.getGamepads()[0];
-      if (!gp || !speedEnabled) return;
+      if (!gp) {
+        setGamepadLinear((prev) => (vectorsAlmostEqual(prev, ZERO_VECTOR) ? prev : { ...ZERO_VECTOR }));
+        setGamepadAngular((prev) => (vectorsAlmostEqual(prev, ZERO_VECTOR) ? prev : { ...ZERO_VECTOR }));
+        updateControllerInfo({ name: "None", type: null, throttle: null });
+        return;
+      }
 
-      /* D-pad overrides */
-      const b12 = gp.buttons[12]?.pressed; // up
-      const b13 = gp.buttons[13]?.pressed; // down
-      const b14 = gp.buttons[14]?.pressed; // left
-      const b15 = gp.buttons[15]?.pressed; // right
+      const controllerType = identifyControllerType(gp.id);
 
-      let left = 0;
-      let right = 0;
+      if (!speedEnabled) {
+        updateControllerInfo({ name: gp.id || "Unknown Controller", type: controllerType, throttle: 0 });
+        setGamepadLinear((prev) => (vectorsAlmostEqual(prev, ZERO_VECTOR) ? prev : { ...ZERO_VECTOR }));
+        setGamepadAngular((prev) => (vectorsAlmostEqual(prev, ZERO_VECTOR) ? prev : { ...ZERO_VECTOR }));
+        return;
+      }
 
-      if (b12) {
-        left = right = speed;
-      } else if (b13) {
-        left = right = -speed;
-      } else if (b15) {
-        left = speed;
-        right = -speed;
-      } else if (b14) {
-        left = -speed;
-        right = speed;
+      const baseScale = (speedRef.current / 100) * MAX_TWIST;
+
+      let throttle = 1;
+      let nextLinear = { ...ZERO_VECTOR };
+      let nextAngular = { ...ZERO_VECTOR };
+
+      if (controllerType === "logitech-extreme-3d") {
+        const throttleAxis = gp.axes[3] ?? -1; // [-1,1], forward ≈ -1, back ≈ 1
+        const normalized = Math.min(Math.max((1 - throttleAxis) / 2, 0), 1); // 0..1
+        throttle = normalized;
+        const scale = baseScale * throttle;
+
+        const axisLX = applyAxisDeadzone(-(gp.axes[1] ?? 0), 0.3); // forward/back
+        const axisLY = applyAxisDeadzone( (gp.axes[0] ?? 0), 0.3); // strafe
+        const axisAZ = applyAxisDeadzone(-(gp.axes[2] ?? 0), 0.3); // twist
+
+        nextLinear = {
+          x: axisLX * scale,
+          y: axisLY * scale,
+          z: 0,
+        };
+
+        nextAngular = {
+          x: 0,
+          y: 0,
+          z: axisAZ * scale,
+        };
       } else {
-        /* Analogue sticks (axes 2 & 3) */
-        left = Math.round(gp.axes[1] * -speed);
-        right = Math.round(gp.axes[3] * -speed);
+        const scale = baseScale;
+        const axisLX2 = applyAxisDeadzone(-(gp.axes[1] ?? 0), 0.3);
+        const axisLY2 = applyAxisDeadzone( (gp.axes[0] ?? 0), 0.3);
+        const axisAZ2 = applyAxisDeadzone( (gp.axes[2] ?? gp.axes[3] ?? 0), 0.3);
+
+        nextLinear = {
+          x: axisLX2 * scale,
+          y: axisLY2 * scale,
+          z: 0,
+        };
+        nextAngular = {
+          x: 0,
+          y: 0,
+          z: axisAZ2 * scale,
+        };
       }
 
-      if (left !== leftDrive || right !== rightDrive) {
-        setLeftDrive(left);
-        setRightDrive(right);
-        sendCommand(left, right);
-      }
+      updateControllerInfo({
+        name: gp.id || "Unknown Controller",
+        type: controllerType,
+        throttle,
+      });
+
+      setGamepadLinear((prev) => (vectorsAlmostEqual(prev, nextLinear) ? prev : nextLinear));
+      setGamepadAngular((prev) => (vectorsAlmostEqual(prev, nextAngular) ? prev : nextAngular));
     };
 
     const interval = setInterval(pollGamepad, 50);
     return () => clearInterval(interval);
-  }, [leftDrive, rightDrive, speed, speedEnabled]);
+  }, [speedEnabled, updateControllerInfo]);
+
+  const combinedLinear = useMemo(
+    () => ({
+      x: keyboardLinear.x + gamepadLinear.x,
+      y: keyboardLinear.y + gamepadLinear.y,
+      z: keyboardLinear.z + gamepadLinear.z,
+    }),
+    [keyboardLinear, gamepadLinear]
+  );
+
+  const combinedAngular = useMemo(
+    () => ({
+      x: keyboardAngular.x + gamepadAngular.x,
+      y: keyboardAngular.y + gamepadAngular.y,
+      z: keyboardAngular.z + gamepadAngular.z,
+    }),
+    [keyboardAngular, gamepadAngular]
+  );
+
+  const effectiveTwist = useMemo(
+    () => (
+      speedEnabled
+        ? {
+            linear: { ...combinedLinear },
+            angular: { ...combinedAngular },
+          }
+        : {
+            linear: { ...ZERO_VECTOR },
+            angular: { ...ZERO_VECTOR },
+          }
+    ),
+    [combinedLinear, combinedAngular, speedEnabled]
+  );
+
+  useEffect(() => {
+    const payload = {
+      linear: { ...effectiveTwist.linear },
+      angular: { ...effectiveTwist.angular },
+    };
+
+    if (twistAlmostEqual(payload, lastSentTwistRef.current)) {
+      return;
+    }
+
+    lastSentTwistRef.current = {
+      linear: { ...payload.linear },
+      angular: { ...payload.angular },
+    };
+
+    sendTwistCommand(payload);
+  }, [effectiveTwist, sendTwistCommand]);
 
   /* ---------------------------------------------------------------------------------- */
   /* (VideoFeedCard, DataDisplayCard, VideoFeedCard, DrivetrainCard, SpeedControlCard ) */
@@ -221,8 +424,8 @@ export default function Dashboard() {
         <div className="col-lg-3 mt-3">
           <DrivetrainCard
             timestamp={coreFeedback.epoch_time}
-            left={leftDrive}
-            right={rightDrive}
+            linear={effectiveTwist.linear}
+            angular={effectiveTwist.angular}
           />
         </div>
 
@@ -232,6 +435,7 @@ export default function Dashboard() {
             setSpeed={setSpeed}
             enabled={speedEnabled}
             setEnabled={setSpeedEnabled}
+            controllerInfo={controllerInfo}
           />
         </div>
       </div>

@@ -8,6 +8,9 @@ services:
       - basestation_net
     volumes:
       - ros2_build:/ros2_ws
+    environment:
+      - ROS_DOMAIN_ID=0
+      - ROS_LOCALHOST_ONLY=0
     entrypoint: ["/bin/bash", "-c", "tail -f /dev/null"]
 
 
@@ -26,6 +29,8 @@ services:
     environment:
       DJANGO_SETTINGS_MODULE: basestationproject.settings
       REDIS_URL: redis://redis:6379/0
+      ROS_DOMAIN_ID: 0
+      ROS_LOCALHOST_ONLY: 0
     volumes:
       - django_static:/app/static
       - django_media:/app/media
@@ -54,6 +59,9 @@ services:
       - "8080:8080"
     volumes:
       - ros2_build:/ros2_ws
+    environment:
+      - ROS_DOMAIN_ID=0
+      - ROS_LOCALHOST_ONLY=0
 
   fastapi_process:
     build:
@@ -69,6 +77,9 @@ services:
       - "8081:8081"
     volumes:
       - ros2_build:/ros2_ws
+    environment:
+      - ROS_DOMAIN_ID=0
+      - ROS_LOCALHOST_ONLY=0
 
 
   frontend:

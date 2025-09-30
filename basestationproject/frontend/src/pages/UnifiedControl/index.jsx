@@ -1,15 +1,29 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import axios from "axios";
 import "bootstrap/dist/css/bootstrap.min.css";
 import "./styles.css";
 import MainNavbar from "../../components/MainNavbar";
 
+const EPSILON = 0.01;
+
+const vectorsAlmostEqual = (a, b, epsilon = EPSILON) =>
+  Math.abs(a.x - b.x) < epsilon &&
+  Math.abs(a.y - b.y) < epsilon &&
+  Math.abs(a.z - b.z) < epsilon;
+
+const twistAlmostEqual = (a, b, epsilon = EPSILON) =>
+  vectorsAlmostEqual(a.linear, b.linear, epsilon) &&
+  vectorsAlmostEqual(a.angular, b.angular, epsilon);
+
+const CONTROL_KEYS = new Set(["w", "s", "a", "d", "q", "e"]);
+
+const applyDeadzone = (value, threshold = 0.1) =>
+  Math.abs(value) < threshold ? 0 : value;
+
 const UnifiedControl = () => {
   const [jointAngles, setJointAngles] = useState([0, 0, 0, 0, 0, -127]);
   const [selectedJoint, setSelectedJoint] = useState(null);
 
-  const [leftDrive, setLeftDrive] = useState(0);
-  const [rightDrive, setRightDrive] = useState(0);
   const [speedMultiplier, setSpeedMultiplier] = useState(100);
   const [armFeedback, setArmFeedback] = useState([0, 0, 0, 0, 0, -127]);
   const [jointSpeedOverrides, setJointSpeedOverrides] = useState([1, 1, 1]);
@@ -20,6 +34,73 @@ const UnifiedControl = () => {
     wheel_torque: [],
   });
 
+  const [keyboardLinear, setKeyboardLinear] = useState({ x: 0, y: 0, z: 0 });
+  const [keyboardAngular, setKeyboardAngular] = useState({ x: 0, y: 0, z: 0 });
+  const [gamepadLinear, setGamepadLinear] = useState({ x: 0, y: 0, z: 0 });
+  const [gamepadAngular, setGamepadAngular] = useState({ x: 0, y: 0, z: 0 });
+
+  const speedMultiplierRef = useRef(speedMultiplier);
+  const pressedKeysRef = useRef(new Set());
+  const lastSentTwistRef = useRef({
+    linear: { x: 0, y: 0, z: 0 },
+    angular: { x: 0, y: 0, z: 0 },
+  });
+
+  const recalcKeyboardTwist = useCallback(() => {
+    const multiplier = speedMultiplierRef.current / 100;
+    const keys = pressedKeysRef.current;
+
+    const newLinear = { x: 0, y: 0, z: 0 };
+    const newAngular = { x: 0, y: 0, z: 0 };
+
+    if (keys.has("w")) newLinear.x += multiplier;
+    if (keys.has("s")) newLinear.x -= multiplier;
+    if (keys.has("q")) newLinear.y += multiplier;
+    if (keys.has("e")) newLinear.y -= multiplier;
+    if (keys.has("a")) newAngular.z += multiplier;
+    if (keys.has("d")) newAngular.z -= multiplier;
+
+    setKeyboardLinear((prev) => (vectorsAlmostEqual(prev, newLinear) ? prev : newLinear));
+    setKeyboardAngular((prev) => (vectorsAlmostEqual(prev, newAngular) ? prev : newAngular));
+  }, []);
+
+  useEffect(() => {
+    speedMultiplierRef.current = speedMultiplier;
+    recalcKeyboardTwist();
+  }, [speedMultiplier, recalcKeyboardTwist]);
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      const key = event.key.toLowerCase();
+      if (!CONTROL_KEYS.has(key)) return;
+      event.preventDefault();
+      const keys = pressedKeysRef.current;
+      if (!keys.has(key)) {
+        keys.add(key);
+        recalcKeyboardTwist();
+      }
+    };
+
+    const handleKeyUp = (event) => {
+      const key = event.key.toLowerCase();
+      if (!CONTROL_KEYS.has(key)) return;
+      event.preventDefault();
+      const keys = pressedKeysRef.current;
+      if (keys.delete(key)) {
+        recalcKeyboardTwist();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
+  }, [recalcKeyboardTwist]);
+
+
   const yButtonRef = useRef(false);
   const xButtonRef = useRef(false);
   const aButtonRef = useRef(false);
@@ -28,7 +109,7 @@ const UnifiedControl = () => {
 
   // Fetch Arm Feedback
   useEffect(() => {
-    document.title = "Unified Control"
+    document.title = "Unified Control";
     const fetchArmFeedback = async () => {
       try {
         const response = await axios.get("http://localhost:8000/api/arm-feedback/");
@@ -58,7 +139,7 @@ const UnifiedControl = () => {
   }, []);
 
   // Send Arm Command
-  const sendArmCommand = async (angles) => {
+  const sendArmCommand = useCallback(async (angles) => {
     try {
       await axios.post("http://localhost:8000/api/arm-command/", {
         joint_positions: angles,
@@ -66,35 +147,39 @@ const UnifiedControl = () => {
     } catch (error) {
       console.error("Failed to send arm command:", error.message);
     }
-  };
+  }, []);
 
   // Send Drive Command
-  const sendDriveCommand = async (left, right) => {
+  const sendTwistCommand = useCallback(async (payload) => {
     try {
-      await axios.post("http://localhost:8080/command", {
-        left_drive: left,
-        right_drive: right,
-      });
+      await axios.post("http://localhost:8080/command", payload);
     } catch (error) {
       console.error("Failed to send drive command:", error.message);
     }
-  };
+  }, []);
 
   // Unified Gamepad Polling
   useEffect(() => {
+    const zeroVector = { x: 0, y: 0, z: 0 };
+
     const pollGamepad = () => {
       const gamepad = navigator.getGamepads()[0];
-      if (!gamepad) return;
-    
+      const scale = speedMultiplierRef.current / 100;
+
+      if (!gamepad) {
+        setGamepadLinear((prev) => (vectorsAlmostEqual(prev, zeroVector) ? prev : zeroVector));
+        setGamepadAngular((prev) => (vectorsAlmostEqual(prev, zeroVector) ? prev : zeroVector));
+        return;
+      }
+
       // === ARM ===
-      const joint1 = {}
       const jointSpeed = [
         jointSpeedOverrides[0],
         jointSpeedOverrides[1],
         jointSpeedOverrides[2],
         255.0,
-        255.0
-      ];      
+        255.0,
+      ];
       const rt = gamepad.axes[5] > 0.5;
       const lt = gamepad.axes[4] > 0.5;
 
@@ -120,7 +205,6 @@ const UnifiedControl = () => {
       xButtonRef.current = xPressed;
       aButtonRef.current = aPressed;
 
-    
       const updatedAngles = [...jointAngles];
       if (selectedJoint !== null) {
         if (selectedJoint < 5) {
@@ -132,44 +216,63 @@ const UnifiedControl = () => {
         setJointAngles(updatedAngles);
         sendArmCommand(updatedAngles);
       }
-    
-      // === DRIVE ===
-      const b12Pressed = gamepad.buttons[12]?.pressed;
-      const b13Pressed = gamepad.buttons[13]?.pressed;
-      const b14Pressed = gamepad.buttons[14]?.pressed;
-      const b15Pressed = gamepad.buttons[15]?.pressed;
-    
-      let left = leftDrive;
-      let right = rightDrive;
-    
-      if (b12Pressed) {
-        left = speedMultiplier;
-        right = speedMultiplier;
-      } else if (b13Pressed) {
-        left = -speedMultiplier;
-        right = -speedMultiplier;
-      } else if (b15Pressed) {
-        left = speedMultiplier;
-        right = -speedMultiplier;
-      } else if (b14Pressed) {
-        left = -speedMultiplier;
-        right = speedMultiplier;
-      } else {
-        left = Math.round(gamepad.axes[1] * -speedMultiplier);
-        right = Math.round(gamepad.axes[3] * -speedMultiplier);
-      }
-    
-      if (left !== leftDrive || right !== rightDrive) {
-        setLeftDrive(left);
-        setRightDrive(right);
-        sendDriveCommand(left, right);
-      }
+
+      // === DRIVE (Twist) ===
+      const linearVector = {
+        x: applyDeadzone(-gamepad.axes[1] * scale),
+        y: applyDeadzone(gamepad.axes[0] * scale),
+        z: 0,
+      };
+
+      const angularVector = {
+        x: 0,
+        y: 0,
+        z: applyDeadzone(gamepad.axes[2] * scale),
+      };
+
+      setGamepadLinear((prev) => (vectorsAlmostEqual(prev, linearVector) ? prev : linearVector));
+      setGamepadAngular((prev) => (vectorsAlmostEqual(prev, angularVector) ? prev : angularVector));
     };
-    
 
     const interval = setInterval(pollGamepad, 50);
     return () => clearInterval(interval);
-  }, [jointAngles, selectedJoint, leftDrive, rightDrive, speedMultiplier]);
+  }, [jointAngles, selectedJoint, jointSpeedOverrides, sendArmCommand]);
+
+  const combinedLinear = useMemo(
+    () => ({
+      x: keyboardLinear.x + gamepadLinear.x,
+      y: keyboardLinear.y + gamepadLinear.y,
+      z: keyboardLinear.z + gamepadLinear.z,
+    }),
+    [keyboardLinear, gamepadLinear]
+  );
+
+  const combinedAngular = useMemo(
+    () => ({
+      x: keyboardAngular.x + gamepadAngular.x,
+      y: keyboardAngular.y + gamepadAngular.y,
+      z: keyboardAngular.z + gamepadAngular.z,
+    }),
+    [keyboardAngular, gamepadAngular]
+  );
+
+  useEffect(() => {
+    const payload = {
+      linear: combinedLinear,
+      angular: combinedAngular,
+    };
+
+    if (twistAlmostEqual(payload, lastSentTwistRef.current)) {
+      return;
+    }
+
+    lastSentTwistRef.current = {
+      linear: { ...payload.linear },
+      angular: { ...payload.angular },
+    };
+
+    sendTwistCommand(payload);
+  }, [combinedLinear, combinedAngular, sendTwistCommand]);
 
   return (
     <>
@@ -260,11 +363,17 @@ const UnifiedControl = () => {
               <div className="card-body text-center">
                 {jointAngles.slice(0, 5).map((angle, index) => (
                   <p key={index}>
-                    <strong>Joint {index + 1}:</strong> {angle.toFixed(2)}°
+                    <strong>Joint {index + 1} Cmd:</strong> {angle.toFixed(2)}° |
+                    <strong> Fb:</strong>{" "}
+                    {typeof armFeedback[index] === "number"
+                      ? `${armFeedback[index].toFixed(2)}°`
+                      : "N/A"}
                   </p>
                 ))}
                 <p>
-                  <strong>Gripper:</strong> {jointAngles[5]}%
+                  <strong>Gripper Cmd:</strong> {jointAngles[5]}% |
+                  <strong> Fb:</strong>{" "}
+                  {typeof armFeedback[5] === "number" ? `${armFeedback[5]}%` : "N/A"}
                 </p>
               </div>
             </div>
@@ -291,14 +400,18 @@ const UnifiedControl = () => {
                 </p>
               </div>
             </div>
-            {/* Drive Values */}
+            {/* Twist Command Preview */}
             <div className="card mb-3">
               <div className="card-header bg-dark text-white text-center">
-                Drive Values
+                Twist Command
               </div>
               <div className="card-body text-center">
-                <p><strong>Left Drive:</strong> {leftDrive}</p>
-                <p><strong>Right Drive:</strong> {rightDrive}</p>
+                <p>
+                  <strong>Linear:</strong> X {combinedLinear.x.toFixed(2)}, Y {combinedLinear.y.toFixed(2)}, Z {combinedLinear.z.toFixed(2)}
+                </p>
+                <p>
+                  <strong>Angular:</strong> X {combinedAngular.x.toFixed(2)}, Y {combinedAngular.y.toFixed(2)}, Z {combinedAngular.z.toFixed(2)}
+                </p>
               </div>
             </div>
 
