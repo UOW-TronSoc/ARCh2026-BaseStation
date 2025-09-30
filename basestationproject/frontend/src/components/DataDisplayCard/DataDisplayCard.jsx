@@ -2,6 +2,11 @@ import React from "react";
 import styles from "./DataDisplayCard.module.css";
 
 export default function DataDisplayCard({ radio, battery, pitch, roll }) {
+  const safeNumber = (value, fractionDigits = 1) =>
+    typeof value === "number" && !Number.isNaN(value)
+      ? value.toFixed(fractionDigits)
+      : "--";
+
   const formatCellVoltages = (cellVoltages) => {
     if (!Array.isArray(cellVoltages)) return "N/A";
     return cellVoltages.map((mv) => `${(mv / 1000).toFixed(2)}V`).join(" | ");
@@ -39,61 +44,68 @@ export default function DataDisplayCard({ radio, battery, pitch, roll }) {
 
       {/* Battery */}
       <section className={styles.section}>
-        <div className="d-flex justify-content-between">
-          <span>
-            Battery Charge
-            <br />
-            <strong>{battery.charge_pct.toFixed(1)}%</strong>
-          </span>
-          <span>
-            Current Draw
-            <br />
-            <strong>{battery.current_draw.toFixed(1)} A</strong>
-          </span>
-        </div>
-        <div className="d-flex justify-content-between mt-3">
-          <span>
-            Temperature
-            <br />
-            <strong>{battery.temperature.toFixed(1)} °C</strong>
-          </span>
-          <span>
-            Total Voltage
-            <br />
-            <strong>{battery.total_voltage?.toFixed(2)} V</strong>
-          </span>
-        </div>
-        <div className="d-flex justify-content-between mt-3">
-          <span>
-            Measured Voltage
-            <br />
-            <strong>
-              {typeof battery.measured_voltage === "number"
-                ? battery.measured_voltage.toFixed(2) + " V"
-                : "--"}
-            </strong>
-          </span>
-          <span>
-            Total Voltage
-            <br />
-            <strong>
-              {typeof battery.total_voltage === "number"
-                ? battery.total_voltage.toFixed(2) + " V"
-                : "--"}
-            </strong>
-          </span>
+        {[
+          [
+            "Battery Charge",
+            `${safeNumber(battery.charge_pct)}%`,
+            "Current Draw",
+            `${safeNumber(battery.current_draw)} A`,
+          ],
+          [
+            "Avg Temp",
+            `${safeNumber(battery.temperature)} °C`,
+            "Max Temp",
+            `${safeNumber(battery.temperature_max)} °C`,
+          ],
+          [
+            "Min Temp",
+            `${safeNumber(battery.temperature_min)} °C`,
+            "Charge State",
+            `${battery.charge_state ?? "--"}`,
+          ],
+          [
+            "Measured Voltage",
+            `${safeNumber(battery.measured_voltage, 2)} V`,
+            "Total Voltage",
+            `${safeNumber(battery.total_voltage, 2)} V`,
+          ],
+          [
+            "Capacity",
+            typeof battery.capacity === "number"
+              ? `${battery.capacity} mAh`
+              : "--",
+            "Source Stamp",
+            battery.source_timestamp
+              ? new Date(battery.source_timestamp * 1000).toLocaleTimeString()
+              : "--",
+          ],
+        ].map(([labelLeft, valueLeft, labelRight, valueRight]) => (
+          <div key={labelLeft} className="d-flex justify-content-between mt-3">
+            <span>
+              {labelLeft}
+              <br />
+              <strong>{valueLeft}</strong>
+            </span>
+            <span>
+              {labelRight}
+              <br />
+              <strong>{valueRight}</strong>
+            </span>
+          </div>
+        ))}
+
+        <div className="mt-3">
+          <span>Cell Voltages</span>
+          <div className={`mt-2 ${styles.inlineList}`}>
+            <small>{formatCellVoltages(battery.cell_voltages)}</small>
+          </div>
         </div>
 
-        <div className="d-flex justify-content-between mt-3">
-          <span>
-            Capacity
-            <br />
-            <strong>
-              {typeof battery.capacity === "number"
-                ? battery.capacity + " mAh"
-                : "--"}
-            </strong>
-          </span>
+        <div className="mt-3">
+          <span>Fault Bits</span>
+          <div className={`mt-2 ${styles.inlineList}`}>
+            <small>{formatFaultBits(battery.fault_bits)}</small>
+          </div>
         </div>
       </section>
     </div>

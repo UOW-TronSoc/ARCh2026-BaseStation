@@ -9,3 +9,9 @@
   padding-top:var(--space-xs);
   border-top:1px solid rgba(255,255,255,.2);
 }
+
+.inlineList{
+  font-family:monospace;
+  white-space:normal;
+  word-break:break-word;
+}

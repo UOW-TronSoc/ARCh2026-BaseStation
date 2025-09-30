@@ -9,6 +9,9 @@ export default function MainNavbar() {
     charge_pct: 0,
     current_draw: 0,
     temperature: 0,
+    temperature_max: 0,
+    charge_state: 0,
+    fault_bits: [],
   });
   
 
@@ -19,6 +22,9 @@ export default function MainNavbar() {
         charge_pct: data.charge_pct ?? 0,
         current_draw: data.current_draw ?? 0,
         temperature: data.temperature ?? 0,
+        temperature_max: data.temperature_max ?? data.temperature ?? 0,
+        charge_state: data.charge_state ?? 0,
+        fault_bits: data.fault_bits ?? [],
       });
     } catch (err) {
       console.error("Failed to fetch battery:", err);
@@ -30,6 +36,18 @@ export default function MainNavbar() {
     const timer = setInterval(fetchBattery, 2000);
     return () => clearInterval(timer);
   }, []);
+
+  const activeFaults = Array.isArray(batteryInfo.fault_bits)
+    ? batteryInfo.fault_bits
+        .map((bit, idx) => (bit ? idx : null))
+        .filter((v) => v !== null)
+    : [];
+
+  const batteryTooltip = `Current: ${batteryInfo.current_draw}A\n` +
+    `Temp: ${batteryInfo.temperature}°C\n` +
+    `Max Temp: ${batteryInfo.temperature_max}°C\n` +
+    `Charge State: ${batteryInfo.charge_state}\n` +
+    (activeFaults.length ? `Faults: ${activeFaults.join(', ')}` : "Faults: OK");
 
   return (
     <nav className="navbar navbar-expand-lg navbar-dark bg-dark sticky-top floating-navbar">
@@ -66,7 +84,7 @@ export default function MainNavbar() {
                 </div>
                 <small
                   className="text-light ms-2"
-                  title={`Current: ${batteryInfo.current_draw}A\nTemp: ${batteryInfo.temperature}°C`}
+                  title={batteryTooltip}
                 >
                   {batteryInfo.charge_pct}%
                 </small>

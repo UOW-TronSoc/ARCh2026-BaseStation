@@ -1,13 +1,57 @@
 #!/usr/bin/env python3
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-import subprocess, os, signal
+import subprocess, os, signal, shlex
 from pathlib import Path
 
-# where your custom ROS 2 msgs live
-custom_lib_path = os.path.abspath(
-    "basestationproject/ros2_ws/install/custom_msgs/lib"
-)
+
+def resolve_ros_install_root() -> Path:
+    """Return best-guess path to the ROS 2 workspace install directory."""
+    env_hint = os.environ.get("ROS_INSTALL_PREFIX")
+    if env_hint:
+        hint = Path(env_hint)
+        if hint.exists():
+            return hint
+
+    local_ws = (Path(__file__).resolve().parent / ".." /
+                "basestationproject" / "ros2_ws" / "install").resolve()
+    if local_ws.exists():
+        return local_ws
+
+    container_ws = Path("/ros2_ws/install")
+    if container_ws.exists():
+        return container_ws
+
+    return local_ws  # fall back to local path even if missing
+
+
+ROS_DISTRO = os.environ.get("ROS_DISTRO", "humble")
+ROS_INSTALL_ROOT = resolve_ros_install_root()
+CUSTOM_LIB_PATH = ROS_INSTALL_ROOT / "custom_msgs" / "lib"
+
+
+def build_launch_command(script_cmd: str) -> str:
+    """Compose shell command that sources ROS setup files before running."""
+    ros_setup_candidates = [
+        Path(f"/opt/ros/{ROS_DISTRO}/setup.bash"),
+        ROS_INSTALL_ROOT / "setup.bash",
+    ]
+
+    parts = []
+    for setup in ros_setup_candidates:
+        if setup.exists():
+            parts.append(f"source {setup}")
+
+    if CUSTOM_LIB_PATH.exists():
+        parts.append(
+            f"export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:{CUSTOM_LIB_PATH}"
+        )
+        parts.append(
+            f"export DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH:{CUSTOM_LIB_PATH}"
+        )
+
+    parts.append(f"python3 {script_cmd}")
+    return "bash -c \"" + " && ".join(parts) + "\""
 
 app = FastAPI()
 app.add_middleware(
@@ -28,13 +72,16 @@ scripts = {}
 # one entry per video file
 for idx, video in enumerate(video_files):
     name = f"Camera {idx}"
-    # absolute path to your publisher script
-    publisher_py = os.path.abspath(
-        "robot_controller/camera/camera_video_publisher.py"
+    publisher_py = Path(
+        os.path.abspath("robot_controller/camera/camera_video_publisher.py")
     )
-    scripts[name] = (
-        f"{publisher_py} --camera-id {idx} --video-path {video}"
-    )
+    scripts[name] = " ".join([
+        shlex.quote(str(publisher_py)),
+        "--camera-id",
+        str(idx),
+        "--video-path",
+        shlex.quote(str(video)),
+    ])
 
 # then all your other publishers
 static = {
@@ -46,7 +93,7 @@ static = {
     "Logger": "robot_controller/log/logger.py",
 }
 for k, v in static.items():
-    scripts[k] = v
+    scripts[k] = shlex.quote(os.path.abspath(v))
 
 processes = {}
 
@@ -65,10 +112,7 @@ def start_script(script_name: str):
     if script_name in processes and processes[script_name].poll() is None:
         return {"status": "already running"}
 
-    cmd = (
-        f"bash -c 'export DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH:{custom_lib_path} && "
-        f"exec python3 {scripts[script_name]}'"
-    )
+    cmd = build_launch_command(scripts[script_name])
     processes[script_name] = subprocess.Popen(
         cmd,
         shell=True,

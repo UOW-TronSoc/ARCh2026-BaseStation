@@ -1,3 +1,4 @@
+std_msgs/Header header
 uint32[2] temps
 uint32[7] cell_voltages
 uint32 charge_state

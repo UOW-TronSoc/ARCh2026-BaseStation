@@ -843,118 +843,138 @@ def get_radio_feedback(request):
 
 # ----------------------------
 
-class BatteryInfoSubscriber(Node):
-    def __init__(self):
-        super().__init__("battery_info_subscriber")
-        self.latest_msg = None
-        self.subscription = self.create_subscription(
-            BatteryInfo,
-            "/battery_info",
-            self.listener_callback,
-            10,
-        )
+if ROS_IMPORTS_AVAILABLE:
 
-    def listener_callback(self, msg):
-        self.latest_msg = msg
-        self.get_logger().info("BatteryInfo updated")
+    class BatteryInfoSubscriber(Node):
+        def __init__(self):
+            super().__init__("battery_info_subscriber")
+            self.latest_msg = None
+            self.subscription = self.create_subscription(
+                BatteryInfo,
+                "/battery_info",
+                self.listener_callback,
+                10,
+            )
 
-    def get_latest_data(self):
-        return self.latest_msg
+        def listener_callback(self, msg):
+            self.latest_msg = msg
+            self.get_logger().info("BatteryInfo updated")
 
-
-class BmsStatusSubscriber(Node):
-    def __init__(self):
-        super().__init__("bms_status_subscriber")
-        self.latest_msg = None
-        self.subscription = self.create_subscription(
-            BmsStatus,
-            "/bms_status",
-            self.listener_callback,
-            10,
-        )
-
-    def listener_callback(self, msg):
-        self.latest_msg = msg
-        self.get_logger().info("BmsStatus updated")
-
-    def get_latest_data(self):
-        return self.latest_msg
-
-battery_info_sub = BatteryInfoSubscriber()
-bms_status_sub = BmsStatusSubscriber()
-
-ros_manager.add_node(battery_info_sub)
-ros_manager.add_node(bms_status_sub)
+        def get_latest_data(self):
+            return self.latest_msg
 
 
-class BatteryInfoSubscriber(Node):
-    def __init__(self):
-        super().__init__("battery_info_subscriber")
-        self.latest_msg = None
-        self.subscription = self.create_subscription(
-            BatteryInfo,
-            "/battery_info",
-            self.listener_callback,
-            10,
-        )
+    class BmsStatusSubscriber(Node):
+        def __init__(self):
+            super().__init__("bms_status_subscriber")
+            self.latest_msg = None
+            self.subscription = self.create_subscription(
+                BmsStatus,
+                "/bms_status",
+                self.listener_callback,
+                10,
+            )
 
-    def listener_callback(self, msg):
-        self.latest_msg = msg
-        self.get_logger().info("BatteryInfo updated")
+        def listener_callback(self, msg):
+            self.latest_msg = msg
+            self.get_logger().info("BmsStatus updated")
 
-    def get_latest_data(self):
-        return self.latest_msg
-
-
-class BmsStatusSubscriber(Node):
-    def __init__(self):
-        super().__init__("bms_status_subscriber")
-        self.latest_msg = None
-        self.subscription = self.create_subscription(
-            BmsStatus,
-            "/bms_status",
-            self.listener_callback,
-            10,
-        )
-
-    def listener_callback(self, msg):
-        self.latest_msg = msg
-        self.get_logger().info("BmsStatus updated")
-
-    def get_latest_data(self):
-        return self.latest_msg
+        def get_latest_data(self):
+            return self.latest_msg
 
 
-battery_info_sub = BatteryInfoSubscriber()
-bms_status_sub = BmsStatusSubscriber()
+    battery_info_sub = BatteryInfoSubscriber()
+    bms_status_sub = BmsStatusSubscriber()
 
-ros_manager.add_node(battery_info_sub)
-ros_manager.add_node(bms_status_sub)
+    ros_manager.add_node(battery_info_sub)
+    ros_manager.add_node(bms_status_sub)
+
+else:
+    logging.warning(
+        "ROS message imports unavailable; battery telemetry subscribers disabled."
+    )
+    battery_info_sub = None
+    bms_status_sub = None
 
 
 def battery_feedback_view(request):
+    if not ROS_IMPORTS_AVAILABLE or not battery_info_sub or not bms_status_sub:
+        placeholder = {
+            "charge_pct": 0.0,
+            "current_draw": 0.0,
+            "temperature": 0.0,
+            "temperature_max": 0.0,
+            "temperature_min": 0.0,
+            "temps": [],
+            "timestamp": int(time.time()),
+            "source_timestamp": None,
+            "total_voltage": 0.0,
+            "measured_voltage": 0.0,
+            "capacity": 0,
+            "cell_voltages": [],
+            "cell_voltages_v": [],
+            "charge_state": 0,
+            "fault_bits": [],
+            "data_status": "unavailable",
+        }
+        return JsonResponse(placeholder)
+
     battery_msg = battery_info_sub.get_latest_data()
     bms_msg = bms_status_sub.get_latest_data()
 
     if battery_msg is None or bms_msg is None:
-        return JsonResponse({"error": "Battery data not yet available"}, status=503)
+        placeholder = {
+            "charge_pct": 0.0,
+            "current_draw": 0.0,
+            "temperature": 0.0,
+            "temperature_max": 0.0,
+            "temperature_min": 0.0,
+            "temps": [],
+            "timestamp": int(time.time()),
+            "source_timestamp": None,
+            "total_voltage": 0.0,
+            "measured_voltage": 0.0,
+            "capacity": 0,
+            "cell_voltages": [],
+            "cell_voltages_v": [],
+            "charge_state": 0,
+            "fault_bits": [],
+            "data_status": "pending",
+        }
+        return JsonResponse(placeholder)
 
     try:
         temps = [int(t) for t in bms_msg.temps]
-        cell_voltages = [int(v) for v in bms_msg.cell_voltages]
+        cell_voltages_mv = [int(v) for v in bms_msg.cell_voltages]
         fault_bits = [int(f) for f in bms_msg.fault_bits]
 
-        average_temp = sum(temps) / len(temps) if temps else 0
+        # Derived metrics
+        average_temp = sum(temps) / len(temps) if temps else 0.0
+        max_temp = max(temps) if temps else 0
+        min_temp = min(temps) if temps else 0
+        cell_voltages_v = [round(v / 1000.0, 3) for v in cell_voltages_mv]
+
+        header_stamp = getattr(battery_msg, "header", None)
+        if header_stamp:
+            stamp = header_stamp.stamp
+            source_timestamp = stamp.sec + stamp.nanosec / 1e9
+        else:
+            source_timestamp = None
 
         data = {
             "charge_pct": float(battery_msg.soc),
             "current_draw": float(battery_msg.current),
-            "temperature": average_temp,
+            "temperature": float(average_temp),
+            "temperature_max": float(max_temp),
+            "temperature_min": float(min_temp),
+            "temps": temps,
             "timestamp": int(time.time()),
+            "source_timestamp": source_timestamp,
             "total_voltage": float(battery_msg.total_voltage),
             "measured_voltage": float(battery_msg.measured_voltage),
             "capacity": int(battery_msg.capacity),
-            "cell_voltages": cell_voltages,
+            "cell_voltages": cell_voltages_mv,
+            "cell_voltages_v": cell_voltages_v,
             "charge_state": int(bms_msg.charge_state),
             "fault_bits": fault_bits,
         }
