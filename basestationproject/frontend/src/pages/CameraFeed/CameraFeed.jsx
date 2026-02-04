@@ -6,16 +6,18 @@ import * as THREE from "three";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, Html } from "@react-three/drei";
 
-const CAMERA_IDS = [1, 2, 0, 3]; // front, left, right, rear
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
+
 /**
  * Hook that polls MJPEG URLs and updates THREE.Textures.
+ * @param {string[]} cameraNames - List of camera names (e.g. ["top", "back", "front", "left"])
  */
-function useMJPEGTextures(ids, fps = 10) {
+function useMJPEGTextures(cameraNames, fps = 10) {
   const texturesRef = useRef([]);
 
   useEffect(() => {
-    const intervals = ids.map((id, i) => {
-      // create an Image and a THREE.Texture
+    if (!cameraNames.length) return;
+    const intervals = cameraNames.map((name, i) => {
       const img = new Image();
       img.crossOrigin = "Anonymous";
       const tex = new THREE.Texture(img);
@@ -23,18 +25,17 @@ function useMJPEGTextures(ids, fps = 10) {
       tex.magFilter = THREE.LinearFilter;
       texturesRef.current[i] = tex;
 
-      // polling function
-      const url = `http://localhost:8000/api/video_feed/${id}/`;
+      const url = `${API_BASE}/video_feed/${encodeURIComponent(name)}/`;
       const update = () => {
         img.src = `${url}?t=${Date.now()}`;
       };
 
-      update(); // first frame
+      update();
       return setInterval(update, 1000 / fps);
     });
 
     return () => intervals.forEach((i) => clearInterval(i));
-  }, [ids, fps]);
+  }, [cameraNames.join(","), fps]);
 
   // on each render frame, mark textures needing update
   useFrame(() => {
@@ -49,10 +50,12 @@ function useMJPEGTextures(ids, fps = 10) {
 }
 
 /**
- * Renders the 4 planes in a circle, each textured with its MJPEG feed.
+ * Renders planes in a circle, each textured with its MJPEG feed.
+ * Uses first 4 cameras from the list for the ring.
  */
-function CamerasRing() {
-  const textures = useMJPEGTextures(CAMERA_IDS, 10); // 10 FPS polling
+function CamerasRing({ cameraNames }) {
+  const ringCameras = cameraNames.slice(0, 4);
+  const textures = useMJPEGTextures(ringCameras, 10);
 
   return (
     <group>
@@ -85,30 +88,41 @@ function CamerasRing() {
 }
 
 const CameraFeed = () => {
-  const CAMERA_COUNT = 5;
-  const [activeCameras, setActiveCameras] = useState(
-    Array(CAMERA_COUNT).fill(false)
-  );
-  const [imageSrcs, setImageSrcs] = useState(
-    Array(CAMERA_COUNT).fill("")
-  );
+  const [cameras, setCameras] = useState([]);
+  const [activeCameras, setActiveCameras] = useState([]);
+  const [imageSrcs, setImageSrcs] = useState([]);
   const [focusedCameras, setFocusedCameras] = useState([]);
   const [showBirdsEye, setShowBirdsEye] = useState(false);
 
+  // Fetch camera list from API
+  useEffect(() => {
+    fetch(`${API_BASE}/cameras/`)
+      .then((res) => (res.ok ? res.json() : Promise.reject()))
+      .then((data) => {
+        const list = data.cameras || [];
+        setCameras(list);
+        setActiveCameras(Array(list.length).fill(false));
+        setImageSrcs(Array(list.length).fill(""));
+      })
+      .catch(() => setCameras([]));
+  }, []);
+
   // 2D polling for sidebar & focused images (JPEG frames)
   useEffect(() => {
+    if (!cameras.length) return;
     const intervals = activeCameras.map((on, idx) => {
       if (!on) return null;
+      const name = cameras[idx];
       return setInterval(() => {
         setImageSrcs((prev) => {
           const next = [...prev];
-          next[idx] = `http://localhost:8000/api/video_feed/${idx}/?t=${Date.now()}`;
+          next[idx] = `${API_BASE}/video_feed/${encodeURIComponent(name)}/?t=${Date.now()}`;
           return next;
         });
       }, 1000 / 15); // ~15 FPS
     });
-    return () => intervals.forEach((i) => clearInterval(i));
-  }, [activeCameras]);
+    return () => intervals.forEach((i) => i != null && clearInterval(i));
+  }, [cameras, activeCameras]);
 
   const toggleCamera = (i) =>
     setActiveCameras((prev) => prev.map((v, idx) => (idx === i ? !v : v)));
@@ -116,9 +130,12 @@ const CameraFeed = () => {
     setFocusedCameras((prev) =>
       prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i]
     );
-  const sidebar = [...Array(CAMERA_COUNT).keys()].filter(
-    (i) => !focusedCameras.includes(i)
-  );
+  const sidebar = cameras
+    .map((_, i) => i)
+    .filter((i) => !focusedCameras.includes(i));
+
+  const displayName = (name) =>
+    name ? name.charAt(0).toUpperCase() + name.slice(1) : "";
 
   return (
     <div className="container-fluid mt-4 main-container text-white">
@@ -133,7 +150,11 @@ const CameraFeed = () => {
         </button>
       </div>
 
-      {showBirdsEye ? (
+      {cameras.length === 0 && (
+        <p className="text-center text-muted">Loading cameras...</p>
+      )}
+
+      {showBirdsEye && cameras.length > 0 ? (
         // === 3D MJPEG Ring ===
         <div
           style={{ width: "100%", height: "600px", border: "2px solid white" }}
@@ -142,12 +163,12 @@ const CameraFeed = () => {
             <ambientLight intensity={0.6} />
             <directionalLight position={[5, 10, 5]} intensity={0.5} />
             <Suspense fallback={<Html>Loading feeds...</Html>}>
-              <CamerasRing />
+              <CamerasRing cameraNames={cameras} />
             </Suspense>
             <OrbitControls enablePan={false} enableZoom zoomSpeed={0.6} />
           </Canvas>
         </div>
-      ) : (
+      ) : cameras.length > 0 ? (
         // === 2D Polling Layout ===
         <div className="row">
           <div className="col-md-9">
@@ -163,13 +184,13 @@ const CameraFeed = () => {
                         } mb-2 w-100`}
                         onClick={() => toggleCamera(id)}
                       >
-                        {activeCameras[id] ? "Turn Off" : "Turn On"} Camera{" "}
-                        {id}
+                        {activeCameras[id] ? "Turn Off" : "Turn On"}{" "}
+                        {displayName(cameras[id])}
                       </button>
                       {activeCameras[id] && (
                         <img
                           src={imageSrcs[id]}
-                          alt={`Cam ${id}`}
+                          alt={displayName(cameras[id])}
                           className="img-fluid border rounded w-100"
                           style={{
                             maxHeight: "70vh",
@@ -198,12 +219,13 @@ const CameraFeed = () => {
                   } mb-1 w-100`}
                   onClick={() => toggleCamera(id)}
                 >
-                  {activeCameras[id] ? "Turn Off" : "Turn On"} Camera {id}
+                  {activeCameras[id] ? "Turn Off" : "Turn On"}{" "}
+                  {displayName(cameras[id])}
                 </button>
                 {activeCameras[id] && (
                   <img
                     src={imageSrcs[id]}
-                    alt={`Cam ${id}`}
+                    alt={displayName(cameras[id])}
                     className="img-fluid border rounded"
                     style={{
                       cursor: "pointer",
@@ -217,7 +239,7 @@ const CameraFeed = () => {
             ))}
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 };

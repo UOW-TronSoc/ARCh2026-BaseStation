@@ -5,6 +5,13 @@ import subprocess, os, signal, shlex
 from pathlib import Path
 
 
+# Root of robot_controller: works when it lives at repo root or next to process_manager/main.py
+_process_dir = Path(__file__).resolve().parent
+_candidate_repo = _process_dir.parent / "robot_controller"
+_candidate_app = _process_dir / "robot_controller"
+ROBOT_CONTROLLER_ROOT = _candidate_repo if _candidate_repo.exists() else _candidate_app
+
+
 def resolve_ros_install_root() -> Path:
     """Return best-guess path to the ROS 2 workspace install directory."""
     env_hint = os.environ.get("ROS_INSTALL_PREFIX")
@@ -27,7 +34,7 @@ def resolve_ros_install_root() -> Path:
 
 ROS_DISTRO = os.environ.get("ROS_DISTRO", "humble")
 ROS_INSTALL_ROOT = resolve_ros_install_root()
-CUSTOM_LIB_PATH = ROS_INSTALL_ROOT / "custom_msgs" / "lib"
+CUSTOM_LIB_PATH = ROS_INSTALL_ROOT / "kanga_interfaces" / "lib"
 
 
 def build_launch_command(script_cmd: str) -> str:
@@ -63,18 +70,14 @@ app.add_middleware(
 )
 
 # --- dynamically discover all camera videos ---
-camera_videos_dir = Path(
-    os.path.abspath("robot_controller/camera/videos")
-)
-video_files = sorted(camera_videos_dir.glob("video*.mp4"))
+camera_videos_dir = ROBOT_CONTROLLER_ROOT / "camera" / "videos"
+video_files = sorted(camera_videos_dir.glob("video*.mp4")) if camera_videos_dir.exists() else []
 
 scripts = {}
 # one entry per video file
 for idx, video in enumerate(video_files):
     name = f"Camera {idx}"
-    publisher_py = Path(
-        os.path.abspath("robot_controller/camera/camera_video_publisher.py")
-    )
+    publisher_py = ROBOT_CONTROLLER_ROOT / "camera" / "camera_video_publisher.py"
     scripts[name] = " ".join([
         shlex.quote(str(publisher_py)),
         "--camera-id",
@@ -85,15 +88,15 @@ for idx, video in enumerate(video_files):
 
 # then all your other publishers
 static = {
-    "Battery": "robot_controller/battery/battery_publisher.py",
-    "Radio": "robot_controller/radio/radio_feedback_pub.py",
-    "Core pub": "robot_controller/drive_control/core_publisher.py",
-    "Arm Feedback": "robot_controller/arm/test_arm_feedback_publisher.py",
-    "Fake Joint Integrator": "robot_controller/arm/fake_integrator.py",
-    "Logger": "robot_controller/log/logger.py",
+    "Battery": ROBOT_CONTROLLER_ROOT / "battery" / "battery_publisher.py",
+    "Radio": ROBOT_CONTROLLER_ROOT / "radio" / "radio_feedback_pub.py",
+    "Core pub": ROBOT_CONTROLLER_ROOT / "drive_control" / "core_publisher.py",
+    "Arm Feedback": ROBOT_CONTROLLER_ROOT / "arm" / "test_arm_feedback_publisher.py",
+    "Fake Joint Integrator": ROBOT_CONTROLLER_ROOT / "arm" / "fake_integrator.py",
+    "Logger": ROBOT_CONTROLLER_ROOT / "log" / "logger.py",
 }
 for k, v in static.items():
-    scripts[k] = shlex.quote(os.path.abspath(v))
+    scripts[k] = shlex.quote(str(v.resolve()))
 
 processes = {}
 

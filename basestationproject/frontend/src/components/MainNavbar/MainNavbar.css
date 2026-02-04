@@ -80,3 +80,30 @@
   .battery-red {
     background-color: var(--battery-red);
   }
+
+  /* ========================================================================
+      Backend connection indicator
+      ======================================================================== */
+  .backend-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: var(--space-sm);
+    flex-shrink: 0;
+    transition: background-color 0.25s ease;
+  }
+
+  .backend-dot--connected {
+    background-color: #22c55e;
+    box-shadow: 0 0 6px rgba(34, 197, 94, 0.6);
+  }
+
+  .backend-dot--disconnected {
+    background-color: #ef4444;
+    box-shadow: 0 0 6px rgba(239, 68, 68, 0.6);
+  }
+
+  .backend-dot--unknown {
+    background-color: #6b7280;
+  }

@@ -256,22 +256,24 @@ const UnifiedControl = () => {
     [keyboardAngular, gamepadAngular]
   );
 
+  // Send drivetrain commands continuously at fixed rate (20Hz)
   useEffect(() => {
-    const payload = {
-      linear: combinedLinear,
-      angular: combinedAngular,
-    };
+    const sendInterval = setInterval(() => {
+      const payload = {
+        linear: combinedLinear,
+        angular: combinedAngular,
+      };
 
-    if (twistAlmostEqual(payload, lastSentTwistRef.current)) {
-      return;
-    }
+      // Always send to maintain continuous command stream
+      lastSentTwistRef.current = {
+        linear: { ...payload.linear },
+        angular: { ...payload.angular },
+      };
 
-    lastSentTwistRef.current = {
-      linear: { ...payload.linear },
-      angular: { ...payload.angular },
-    };
+      sendTwistCommand(payload);
+    }, 50); // Send at 20Hz (50ms interval)
 
-    sendTwistCommand(payload);
+    return () => clearInterval(sendInterval);
   }, [combinedLinear, combinedAngular, sendTwistCommand]);
 
   return (

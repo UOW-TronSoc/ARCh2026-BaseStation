@@ -1,6 +1,6 @@
 import rclpy
 from rclpy.node import Node
-from custom_msgs.msg import CustomMessage
+from kanga_interfaces.msg import CustomMessage
 
 class DriveCommandSubscriber(Node):
     def __init__(self):

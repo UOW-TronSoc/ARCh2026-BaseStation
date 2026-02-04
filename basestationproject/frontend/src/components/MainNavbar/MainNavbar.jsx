@@ -3,8 +3,11 @@ import axios from "axios";
 import logo from "assets/logo.png";
 import './MainNavbar.css';
 
+const BACKEND_BASE = "http://127.0.0.1:8000";
+
 export default function MainNavbar() {
-  const API = "http://127.0.0.1:8000/api";
+  const API = `${BACKEND_BASE}/api`;
+  const [backendConnected, setBackendConnected] = useState(null);
   const [batteryInfo, setBatteryInfo] = useState({
     charge_pct: 0,
     current_draw: 0,
@@ -32,6 +35,23 @@ export default function MainNavbar() {
   };
 
   useEffect(() => {
+    const checkBackend = async () => {
+      try {
+        const ctrl = new AbortController();
+        const id = setTimeout(() => ctrl.abort(), 3000);
+        const r = await fetch(`${BACKEND_BASE}/api/`, { signal: ctrl.signal });
+        clearTimeout(id);
+        setBackendConnected(r.ok || r.status < 500);
+      } catch {
+        setBackendConnected(false);
+      }
+    };
+    checkBackend();
+    const timer = setInterval(checkBackend, 5000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
     fetchBattery();
     const timer = setInterval(fetchBattery, 2000);
     return () => clearInterval(timer);
@@ -53,6 +73,11 @@ export default function MainNavbar() {
     <nav className="navbar navbar-expand-lg navbar-dark bg-dark sticky-top floating-navbar">
       <div className="container-fluid d-flex justify-content-between">
         <a className="navbar-brand d-flex align-items-center" href="/">
+          <span
+            className={`backend-dot ${backendConnected === true ? "backend-dot--connected" : backendConnected === false ? "backend-dot--disconnected" : "backend-dot--unknown"}`}
+            title={backendConnected === true ? "Django backend connected" : backendConnected === false ? "Django backend not reachable" : "Checking…"}
+            aria-label={backendConnected === true ? "Backend connected" : backendConnected === false ? "Backend disconnected" : "Checking connection"}
+          />
           <img src={logo} alt="Logo" height="40" className="me-2" />
           <span>UOW Tronsoc</span>
         </a>

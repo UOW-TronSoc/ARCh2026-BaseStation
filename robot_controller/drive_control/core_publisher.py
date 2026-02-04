@@ -2,7 +2,7 @@
 
 import rclpy
 from rclpy.node import Node
-from custom_msgs.msg import CoreFeedback  # Replace with your actual package
+from kanga_interfaces.msg import CoreFeedback  # Replace with your actual package
 import time
 import random
 

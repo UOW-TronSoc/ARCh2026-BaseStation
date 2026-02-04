@@ -5,7 +5,7 @@ from rclpy.node import Node
 import random
 import time
 
-from custom_msgs.msg import RadioFeedback  # Replace with your actual package + message
+from kanga_interfaces.msg import RadioFeedback  # Replace with your actual package + message
 
 class RadioTestPublisher(Node):
     def __init__(self):

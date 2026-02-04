@@ -2,7 +2,7 @@
 
 import rclpy
 from rclpy.node import Node
-from custom_msgs.msg import BatteryInfo, BmsStatus
+from kanga_interfaces.msg import BatteryInfo, BmsStatus
 import random
 
 

@@ -1,6 +1,6 @@
 import rclpy
 from rclpy.node import Node
-from custom_msgs.msg import ScienceFeedback  # Ensure this matches your package
+from kanga_interfaces.msg import ScienceFeedback  # Ensure this matches your package
 
 import random
 import time

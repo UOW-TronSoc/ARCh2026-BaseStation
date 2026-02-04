@@ -12,7 +12,8 @@ urlpatterns = [
     path('checklist/', include(router.urls)),
     
     
-    path('video_feed/<int:camera_id>/', get_frame, name='video_feed'),
+    path('video_feed/<str:camera_name>/', get_frame, name='video_feed'),
+    path('cameras/', get_camera_list, name='camera_list'),
 
     # path('drivetrain-feedback/', get_drivetrain_feedback, name='drivetrain-feedback'),
     path('core-feedback/', get_core_feedback, name='core-feedback'),

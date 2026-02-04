@@ -4,7 +4,7 @@ import random
 import time
 
 from std_msgs.msg import String, Bool, Int32, Float64
-from custom_msgs.msg import ScienceFeedback  # <-- Replace with your actual message package
+from kanga_interfaces.msg import ScienceFeedback  # <-- Replace with your actual message package
 
 class MockSciencePublisher(Node):
     def __init__(self):

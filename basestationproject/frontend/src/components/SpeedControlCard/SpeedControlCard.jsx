@@ -81,7 +81,7 @@ export default function SpeedControlCard({ speed, setSpeed, enabled, setEnabled,
       </div>
 
       <div className={`card-body ${styles.cardBody}`}>
-        <svg ref={svgRef} className={styles.svg}>
+        <svg ref={svgRef} className={styles.svg} viewBox="0 0 240 240" preserveAspectRatio="xMidYMid meet">
           <path d={arc(C, C, R, START, END)} className={styles.arcBg} fill="none" />
           <path d={arc(C, C, R, START, angle)} className={styles.arcProgress} fill="none" />
           <g className={styles.knob} onMouseDown={handleMouseDown}>
@@ -103,7 +103,7 @@ export default function SpeedControlCard({ speed, setSpeed, enabled, setEnabled,
           <text x={label100.x} y={label100.y + 4} className={styles.label}>100</text>
         </svg>
 
-        <div className="mt-3 text-center">
+        <div className={styles.deviceInfo}>
           <div><strong>Active Device:</strong> {controllerInfo?.name ?? "None"}</div>
           {controllerInfo?.type === "logitech-extreme-3d" &&
             typeof controllerInfo?.throttle === "number" && (

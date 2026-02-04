@@ -16,11 +16,11 @@ export default function ArmControl() {
   // ─── State ─────────────────────────────────────────────────────────────────────
   const [camId, setCamId] = useState(0);
 
-  // jointAngles ← read from /api/arm-feedback/ (physical or fake‐integrated positions)
-  // Now length 6, for joints 1–5 and EE
-  const [jointAngles, setJointAngles] = useState([0, 0, 0, 0, 0, -127]);
+  // jointAngles ← read from /api/arm-feedback/ (from /joint_states topic)
+  // Now length 5, for joints J1–J5 (no gripper/EE in feedback)
+  const [jointAngles, setJointAngles] = useState([0, 0, 0, 0, 0]);
   const [selectedJoint, setSelectedJoint] = useState(null);
-  const [jointSpeedOverrides] = useState([5, 5, 5]); // deg/s for first three joints
+  const [jointSpeedOverrides] = useState([1, 1, 1]); // deg/s for first three joints
 
   // Lock/horiz flags for joint 4 (index 3)
   const [isLocked, setIsLocked] = useState(false);
@@ -39,9 +39,9 @@ export default function ArmControl() {
       try {
         const res = await axios.get(`${API_BASE}/arm-feedback/`);
         if (res.status === 200 && Array.isArray(res.data.joints)) {
-          // Take first 6 positions
-          const positions = res.data.joints.map((j) => j.position).slice(0, 6);
-          if (isMounted && positions.length === 6) {
+          // Take first 5 positions (J1-J5 from /joint_states)
+          const positions = res.data.joints.map((j) => j.position).slice(0, 5);
+          if (isMounted && positions.length === 5) {
             setJointAngles(positions);
           }
         }
@@ -62,8 +62,11 @@ export default function ArmControl() {
   // ─── Helper: POST `/api/arm-velocity-command/ { joint_velocities: [v1…v6] }` ───
   const sendVelocityCommand = async (velocities) => {
     try {
+      // For now we only send 5 joints (ignore gripper at index 5 if present).
+      const fiveJointVel = velocities.slice(0, 5);
       await axios.post(`${API_BASE}/arm-velocity-command/`, {
-        joint_velocities: velocities,
+        // joint_velocities: velocities, // original 6‑joint command (kept for reference)
+        joint_velocities: fiveJointVel,
       });
     } catch (err) {
       console.error("❌ Failed to send velocity command:", err.message);
@@ -80,7 +83,7 @@ export default function ArmControl() {
 
     if (isLocked || isHorizontal) {
       holdIntervalRef.current = setInterval(() => {
-        const velCmd = [0, 0, 0, 0, 0, 0];
+        const velCmd = [0, 0, 0, 0, 0]; // 5 joints only
         // To hold at a fixed angle, we repeatedly send zero velocity on joint 4 (index 3)
         // Joint 4’s actual position remains unchanged by the integrator/hardware.
         sendVelocityCommand(velCmd);
@@ -115,16 +118,18 @@ export default function ArmControl() {
     }[target];
     if (jointIndex === undefined) return;
 
-    // value is interpreted as deg/s or percent for gripper (EE)
-    const velCmd = [0, 0, 0, 0, 0, 0];
-    velCmd[jointIndex] = value;
+    // value is interpreted as deg/s for joints J1-J5
+    const velCmd = [0, 0, 0, 0, 0]; // 5 joints only
+    if (jointIndex !== undefined) {
+      velCmd[jointIndex] = value;
+    }
     sendVelocityCommand(velCmd);
     setSelectedJoint(null);
   };
 
   // ─── Handle preset: send a brief velocity until the arm reaches target ───────────
   const handlePresetTriggered = (presetAngles) => {
-    const SPEED = 20; // deg/s for joints 1–5
+    const SPEED = 20; // deg/s for joints J1–J5
     const velCmd = jointAngles.map((cur, i) => {
       if ((isLocked && i === 3) || (isHorizontal && i === 3)) {
         return 0;
@@ -134,15 +139,15 @@ export default function ArmControl() {
         if (cur > presetAngles[i]) return -SPEED;
         return 0;
       } else {
-        // For EE (index 5), presets generally don't set gripper, so keep zero
+        // No EE/gripper in feedback, so keep zero
         return 0;
       }
-    });
+    }).slice(0, 5); // Only take first 5 joints
     sendVelocityCommand(velCmd);
 
     // After a fixed time, stop all motion
     setTimeout(() => {
-      sendVelocityCommand([0, 0, 0, 0, 0, 0]);
+      sendVelocityCommand([0, 0, 0, 0, 0]);
     }, 1000);
 
     setSelectedJoint(null);
@@ -156,7 +161,7 @@ export default function ArmControl() {
       setIsLocked(true);
       setIsHorizontal(false);
       // Immediately send zero velocity to hold joint 4
-      sendVelocityCommand([0, 0, 0, 0, 0, 0]);
+      sendVelocityCommand([0, 0, 0, 0, 0]);
     }
   };
 
@@ -166,7 +171,7 @@ export default function ArmControl() {
     } else {
       setIsHorizontal(true);
       setIsLocked(false);
-      sendVelocityCommand([0, 0, 0, 0, 0, 0]);
+      sendVelocityCommand([0, 0, 0, 0, 0]);
     }
   };
 
@@ -177,18 +182,18 @@ export default function ArmControl() {
       if (!gp) return;
 
       const rt = gp.axes[5] > 0.5;
-      const lt = gp.axes[4] > 0.5;
+      const lt = gp.axes[5] < -0.5;
 
       const y = gp.buttons[3]?.pressed;
       const x = gp.buttons[2]?.pressed;
       const a = gp.buttons[0]?.pressed;
 
-      // Cycle joint selection with Y/X/A among 6 joints (0..5)
+      // Cycle joint selection with Y/X/A among 5 joints (0..4, J1-J5)
       if (y && !yButtonRef.current) {
-        setSelectedJoint((prev) => (prev === null ? 0 : (prev + 1) % 6));
+        setSelectedJoint((prev) => (prev === null ? 0 : (prev + 1) % 5));
       }
       if (x && !xButtonRef.current) {
-        setSelectedJoint((prev) => (prev === null ? 5 : (prev - 1 + 6) % 6));
+        setSelectedJoint((prev) => (prev === null ? 4 : (prev - 1 + 5) % 5));
       }
       if (a && !aButtonRef.current) {
         setSelectedJoint(0);
@@ -198,26 +203,23 @@ export default function ArmControl() {
       xButtonRef.current = x;
       aButtonRef.current = a;
 
-      // Build a 6‐element velocity command
-      const velCmd = [0, 0, 0, 0, 0, 0];
+      // Build a 5‐element velocity command (J1-J5 only)
+      const velCmd = [0, 0, 0, 0, 0];
 
-      if (selectedJoint !== null) {
+      if (selectedJoint !== null && selectedJoint < 5) {
         // If joint 4 is locked/horizontal, ignore attempts to move it
         if ((isLocked || isHorizontal) && selectedJoint === 3) {
-          sendVelocityCommand([0, 0, 0, 0, 0, 0]);
+          sendVelocityCommand([0, 0, 0, 0, 0]);
           return;
         }
 
-        // Determine speed: first three joints use overrides, joints 4 & 5 use 10 deg/s,
-        // and EE (index 5) can use a special value if needed (e.g. 50 for open/close).
+        // Determine speed: first three joints use overrides, joints 4 & 5 use 1 deg/s
         let speed = 0;
         if (selectedJoint < 3) {
           speed = jointSpeedOverrides[selectedJoint];
         } else if (selectedJoint < 5) {
-          speed = 10;
-        } else {
-          // For EE (gripper), a different scale, e.g. ±50 for open/close %.
-          speed = 50;
+          // Joint 4 (index 3) and Joint 5 (index 4)
+          speed = 1;
         }
 
         if (rt) {
@@ -233,7 +235,7 @@ export default function ArmControl() {
 
     const id = setInterval(pollGamepad, 50);
     return () => clearInterval(id);
-  }, [selectedJoint, jointAngles, jointSpeedOverrides, isLocked, isHorizontal]);
+  }, [selectedJoint, jointAngles, jointSpeedOverrides, isLocked, isHorizontal, sendVelocityCommand]);
 
   return (
     <div className="container my-4">
@@ -304,7 +306,8 @@ export default function ArmControl() {
         <div className="card mt-3">
           <div className="card-header bg-primary text-white">Select Arm Joint</div>
           <div className="card-body text-center">
-            {[0, 1, 2, 3, 4, 5].map((joint) => (
+            {/* Only show 5 joints (J1-J5), no gripper in feedback */}
+            {[0, 1, 2, 3, 4].map((joint) => (
               <button
                 key={joint}
                 className={`btn mx-1 ${
@@ -312,7 +315,7 @@ export default function ArmControl() {
                 }`}
                 onClick={() => setSelectedJoint(joint)}
               >
-                {joint === 5 ? "Gripper" : `Joint ${joint + 1}`}
+                {`J${joint + 1}`}
               </button>
             ))}
           </div>

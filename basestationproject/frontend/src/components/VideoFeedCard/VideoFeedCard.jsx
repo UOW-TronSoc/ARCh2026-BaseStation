@@ -3,18 +3,39 @@ import styles from "./VideoFeedCard.module.css";
 import "bootstrap/dist/js/bootstrap.bundle.min.js";
 
 export default function VideoFeedCard({ api }) {
-  const availableCameras = [0, 1, 2, 3, 4]; // 👈 Static for now
-  const [cameraIndex, setCameraIndex] = useState(0);
+  const [cameras, setCameras] = useState([]);
+  const [selectedCamera, setSelectedCamera] = useState("");
   const [imageSrc, setImageSrc] = useState("");
-  const [live, setLive] = useState(true);
-  const [feedEnabled, setFeedEnabled] = useState(true);
+  const [live, setLive] = useState(false);
+  const [feedEnabled, setFeedEnabled] = useState(false);
 
   const intervalRef = useRef(null);
 
+  // Fetch camera list from API on mount
   useEffect(() => {
-    if (feedEnabled) {
+    fetch(`${api}/cameras/`)
+      .then((res) => res.ok ? res.json() : Promise.reject())
+      .then((data) => {
+        const list = data.cameras || [];
+        setCameras(list);
+        if (list.length > 0 && !selectedCamera) {
+          setSelectedCamera(list[0]);
+        }
+      })
+      .catch(() => setCameras([]));
+  }, [api]);
+
+  // When cameras load, default selection to first (or reset if current selection not in list)
+  useEffect(() => {
+    if (cameras.length > 0 && !cameras.includes(selectedCamera)) {
+      setSelectedCamera(cameras[0]);
+    }
+  }, [cameras, selectedCamera]);
+
+  useEffect(() => {
+    if (feedEnabled && selectedCamera) {
       intervalRef.current = setInterval(() => {
-        const newSrc = `${api}/video_feed/${cameraIndex}/?time=${Date.now()}`;
+        const newSrc = `${api}/video_feed/${encodeURIComponent(selectedCamera)}/?time=${Date.now()}`;
         fetch(newSrc)
           .then((res) => {
             if (res.ok) {
@@ -32,7 +53,7 @@ export default function VideoFeedCard({ api }) {
     }
 
     return () => clearInterval(intervalRef.current);
-  }, [api, cameraIndex, feedEnabled]);
+  }, [api, selectedCamera, feedEnabled]);
 
   return (
     <div className={`card bg-transparent rounded-3 p-0`}>
@@ -64,17 +85,18 @@ export default function VideoFeedCard({ api }) {
             id="cameraDropdown"
             data-bs-toggle="dropdown"
             aria-expanded="false"
+            disabled={cameras.length === 0}
           >
-            Cam {cameraIndex}
+            {selectedCamera ? selectedCamera.charAt(0).toUpperCase() + selectedCamera.slice(1) : "Camera"}
           </button>
           <ul className="dropdown-menu dropdown-menu-end" aria-labelledby="cameraDropdown">
-            {availableCameras.map((id) => (
-              <li key={id}>
+            {cameras.map((name) => (
+              <li key={name}>
                 <button
                   className="dropdown-item"
-                  onClick={() => setCameraIndex(id)}
+                  onClick={() => setSelectedCamera(name)}
                 >
-                  Cam {id}
+                  {name.charAt(0).toUpperCase() + name.slice(1)}
                 </button>
               </li>
             ))}

@@ -8,7 +8,7 @@ import DrivetrainCard from "components/DrivetrainCard/DrivetrainCard";
 import SpeedControlCard from "components/SpeedControlCard/SpeedControlCard";
 
 const EPSILON = 0.01;
-const MAX_TWIST = 15; // absolute range for linear/Angular components
+const MAX_TWIST = 20; // absolute range for linear/Angular components
 const CONTROL_KEYS = new Set(["w", "s", "a", "d", "q", "e"]);
 
 const ZERO_VECTOR = { x: 0, y: 0, z: 0 };
@@ -364,22 +364,24 @@ export default function Dashboard() {
     [combinedLinear, combinedAngular, speedEnabled]
   );
 
+  // Send drivetrain commands continuously at fixed rate (60Hz)
   useEffect(() => {
-    const payload = {
-      linear: { ...effectiveTwist.linear },
-      angular: { ...effectiveTwist.angular },
-    };
+    const sendInterval = setInterval(() => {
+      const payload = {
+        linear: { ...effectiveTwist.linear },
+        angular: { ...effectiveTwist.angular },
+      };
 
-    if (twistAlmostEqual(payload, lastSentTwistRef.current)) {
-      return;
-    }
+      // Always send to maintain continuous command stream
+      lastSentTwistRef.current = {
+        linear: { ...payload.linear },
+        angular: { ...payload.angular },
+      };
 
-    lastSentTwistRef.current = {
-      linear: { ...payload.linear },
-      angular: { ...payload.angular },
-    };
+      sendTwistCommand(payload);
+    }, 16); // Send at 60Hz (~16.67ms interval, rounded to 16ms)
 
-    sendTwistCommand(payload);
+    return () => clearInterval(sendInterval);
   }, [effectiveTwist, sendTwistCommand]);
 
   /* ---------------------------------------------------------------------------------- */

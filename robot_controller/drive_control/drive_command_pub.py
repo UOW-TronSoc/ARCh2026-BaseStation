@@ -2,7 +2,7 @@
 
 import rclpy
 from rclpy.node import Node
-from custom_msgs.msg import DrivetrainFeedback  # your actual message
+from kanga_interfaces.msg import DrivetrainFeedback  # your actual message
 import time
 
 class TestDrivetrainPublisher(Node):

@@ -1,7 +1,7 @@
 # Dockerfile.django
 FROM ros:humble-ros-core-jammy
 
-# 1) Install pip, build tools, Django deps
+# 1) Install pip, build tools, Django deps, and ROS2 Python deps
 RUN apt-get update && \
     apt-get install -y \
       python3-pip \
@@ -9,6 +9,11 @@ RUN apt-get update && \
       build-essential \
       libgl1-mesa-glx \
       libglib2.0-0 \
+      ros-humble-rclpy \
+      ros-humble-sensor-msgs \
+      ros-humble-std-msgs \
+      ros-humble-cv-bridge \
+      python3-opencv \
     && rm -rf /var/lib/apt/lists/*
 
 # 2) Make sure rclpy & our workspace are sourced at runtime

@@ -5,10 +5,12 @@
 
 .cardBody {
   display: flex;
+  flex-direction: column;
   justify-content: center;
   align-items: center;
   user-select: none;
-  overflow: visible;           /* <-- Add this line */
+  overflow: visible;
+  padding: 1rem;
 }
 
 .switch {
@@ -59,10 +61,13 @@
 
 .svg {
   width: 100%;
-  width: 250px;
-  height: 250px;
+  max-width: 250px;
+  height: auto;
+  aspect-ratio: 1;
 }
 
-.speedCard {
-  width: 1000px;
+.deviceInfo {
+  margin-top: 0.75rem;
+  text-align: center;
+  font-size: 0.875rem;
 }

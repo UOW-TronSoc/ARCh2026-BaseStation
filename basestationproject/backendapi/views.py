@@ -21,7 +21,7 @@ import logging
 
 try:
     from sensor_msgs.msg import Image, CompressedImage, JointState
-    from custom_msgs.msg import ScienceFeedback, ScienceControl, RadioFeedback, CoreFeedback, BmsStatus, BatteryInfo
+    from kanga_interfaces.msg import ScienceFeedback, ScienceControl, RadioFeedback, CoreFeedback, BmsStatus, BatteryInfo
     from std_msgs.msg import String, Bool, Empty
 
     ROS_IMPORTS_AVAILABLE = True
@@ -154,43 +154,46 @@ ros_manager = ROS2Manager.get_instance()
 # Camera Feedback streams
 
 # ----------------------------
+# Editable list of camera names. Each name is used as:
+#   - ROS2 topic: /camera/<name>   (e.g. /camera/top, /camera/back)
+#   - API path:   /api/video_feed/<name>/
+CAMERA_TOPICS = [
+    "top",
+    "back",
+    "front"
+]
+
 
 class MultiCameraSubscriber(Node):
     """
-    A ROS2 node that subscribes to a compressed image topic for one camera ID,
-    decodes incoming JPEG payloads into OpenCV frames, and stores the latest
-    frame safely behind a thread lock.
+    A ROS2 node that subscribes to a compressed image topic for one camera
+    (by name), decodes incoming JPEG payloads into OpenCV frames, and stores
+    the latest frame safely behind a thread lock.
     """
 
-    def __init__(self, camera_id):
+    def __init__(self, camera_name):
         """
         Initialize the subscriber node.
-        
+
         Args:
-            camera_id (int): Numeric identifier for the camera. Used both to
-                             name the node and to form the subscription topic.
+            camera_name (str): Name of the camera (e.g. "top", "back").
+                              Topic subscribed to: /camera/<camera_name>
         """
-        # Name this node uniquely based on camera_id
-        super().__init__(f'camera_stream_subscriber_{camera_id}')
-        
-        # Store camera ID and prepare storage for the latest frame
-        self.camera_id = camera_id
+        super().__init__(f'camera_stream_subscriber_{camera_name}')
+
+        self.camera_name = camera_name
         self.current_frame = None
-        
-        # Lock to synchronize access to current_frame across threads
         self.lock = threading.Lock()
-        
-        # Subscribe to the ROS2 topic publishing CompressedImage for this camera
-        #   - Topic name: /camera_<camera_id>/image_compressed
-        #   - QoS depth: 10
+
+        topic = f'/camera/{camera_name}'
         self.create_subscription(
             CompressedImage,
-            f'/camera_{camera_id}/image_compressed',
+            topic,
             self.image_callback,
             10
         )
 
-    def image_callback(self, msg: CompressedImage):
+    def image_callback(self, msg: CompressedImage): 
         """
         Callback executed whenever a new CompressedImage message arrives.
         Decodes the raw JPEG bytes into an OpenCV BGR image and updates
@@ -214,89 +217,81 @@ class MultiCameraSubscriber(Node):
 # -----------------------------------------------------------------------------
 # Initialize and Register Camera Subscriber Nodes
 # -----------------------------------------------------------------------------
-no_of_cams = 5  # Total number of cameras we expect (IDs 0 through 4)
 
 def initialize_cameras():
     """
-    Dynamically create and register MultiCameraSubscriber nodes for each camera ID.
-    
+    Create and register MultiCameraSubscriber nodes for each name in CAMERA_TOPICS.
+    Subscribes to /camera/<name> for each name in the list.
+
     Returns:
-        dict: Mapping from camera_id to its subscriber node instance.
+        dict: Mapping from camera_name (str) to its subscriber node instance.
     """
     camera_nodes = {}
-    for cam_id in range(no_of_cams):
-        # Instantiate subscriber and add it to the global ROS2 manager
-        camera_node = MultiCameraSubscriber(cam_id)
+    for name in CAMERA_TOPICS:
+        camera_node = MultiCameraSubscriber(name)
         ros_manager.add_node(camera_node)
-        camera_nodes[cam_id] = camera_node
-    
-    logging.info("✅ All camera nodes initialized!")
+        camera_nodes[name] = camera_node
+    logging.info("All camera nodes initialized!")
     return camera_nodes
 
-# Create subscribers at module load
+
 camera_nodes = initialize_cameras()
+
+
+def get_camera_list(request):
+    """Return the list of camera names (same order as CAMERA_TOPICS)."""
+    return JsonResponse({"cameras": list(CAMERA_TOPICS)})
 
 
 # -----------------------------------------------------------------------------
 # Single-Frame HTTP View
 # -----------------------------------------------------------------------------
-def get_frame(request, camera_id):
+def get_frame(request, camera_name):
     """
     HTTP endpoint that returns the most recent frame from one camera as a
     single JPEG image. If no frame is yet available, returns 204 No Content.
-    
+
     Args:
         request (HttpRequest): Django request object.
-        camera_id (str|int): ID of the camera to fetch (parsed to int).
-    
+        camera_name (str): Name of the camera (e.g. "top", "back").
+
     Returns:
         HttpResponse: JPEG image or 204/500 status.
     """
-    camera_id = int(camera_id)
-    
-    # Check that we have a subscriber and that it has at least one frame
-    if camera_id in camera_nodes and camera_nodes[camera_id].current_frame is not None:
-        # Encode the stored OpenCV frame back to JPEG
-        with camera_nodes[camera_id].lock:
-            success, jpeg = cv2.imencode('.jpg', camera_nodes[camera_id].current_frame)
-        if not success:
-            # Encoding failed; internal error
-            return HttpResponse(status=500)
-        
-        # Serve the raw JPEG bytes with correct MIME type
-        return HttpResponse(jpeg.tobytes(), content_type="image/jpeg")
-    
-    # No frame available yet
-    return HttpResponse(status=204)
+    if camera_name not in camera_nodes:
+        return HttpResponse(status=404)
+    node = camera_nodes[camera_name]
+    if node.current_frame is None:
+        return HttpResponse(status=204)
+    with node.lock:
+        success, jpeg = cv2.imencode('.jpg', node.current_frame)
+    if not success:
+        return HttpResponse(status=500)
+    return HttpResponse(jpeg.tobytes(), content_type="image/jpeg")
 
 
 # -----------------------------------------------------------------------------
 # Continuous MJPEG Streaming View
 # -----------------------------------------------------------------------------
 @gzip.gzip_page  # Optional gzip compression for the multipart stream
-def mjpeg_stream(request, camera_id):
+def mjpeg_stream(request, camera_name):
     """
     HTTP endpoint that streams an MJPEG (multipart/x-mixed-replace) response
     for a given camera, pushing new frames as they arrive.
-    
+
     Args:
         request (HttpRequest): Django request object.
-        camera_id (str|int): ID of the camera to stream (parsed to int).
-    
+        camera_name (str): Name of the camera (e.g. "top", "back").
+
     Returns:
         StreamingHttpResponse: Keeps connection open, sending frames until
         client disconnects.
     """
-    camera_id = int(camera_id)
-    if camera_id not in camera_nodes:
-        # Unknown camera ID
+    if camera_name not in camera_nodes:
         return HttpResponse(status=404)
-
     boundary = "--frame"
-    
-    # Create a streaming response that yields JPEG frames in a loop
     response = StreamingHttpResponse(
-        _frame_generator(camera_nodes[camera_id], boundary),
+        _frame_generator(camera_nodes[camera_name], boundary),
         content_type=f'multipart/x-mixed-replace; boundary={boundary}'
     )
     
@@ -615,12 +610,10 @@ class ArmCommandPublisher(Node):
 class ArmFeedbackSubscriber(Node):
     def __init__(self):
         super().__init__('arm_feedback_subscriber')
-        # Subscribe to the real robot/simulator topic for joint states.
-        # If your simulator or robot publishes to '/joint_states', keep this.
-        # Otherwise, change to whatever feedback topic you actually use.
+        # Subscribe to /joint_states topic (standard ROS2 topic for joint feedback)
         self.subscription = self.create_subscription(
             JointState,
-            '/arm_command',
+            '/joint_states',
             self.feedback_callback,
             10
         )
@@ -629,21 +622,34 @@ class ArmFeedbackSubscriber(Node):
 
     def feedback_callback(self, msg: JointState):
         try:
-            positions = list(msg.position)[:6]
-            velocities = list(msg.velocity)[:6] if msg.velocity else [0.0] * len(positions)
-            names = list(msg.name)[:6] if msg.name else [f"joint_{i}" for i in range(len(positions))]
+            # Extract positions (in radians) - expect 5 joints
+            positions_rad = list(msg.position)[:5]
+            # Convert radians to degrees for frontend display
+            positions_deg = [float(p * 180.0 / 3.141592653589793) for p in positions_rad]
+            
+            # Extract velocities (in rad/s) - expect 5 joints
+            velocities_rad = list(msg.velocity)[:5] if msg.velocity and len(msg.velocity) > 0 else [0.0] * len(positions_rad)
+            # Convert rad/s to deg/s for frontend
+            velocities_deg = [float(v * 180.0 / 3.141592653589793) for v in velocities_rad]
+            
+            # Use joint names from message if available, otherwise default to J1-J5
+            if msg.name and len(msg.name) >= 5:
+                names = list(msg.name)[:5]
+            else:
+                # Default joint names matching URDF: J1, J2, J3, J4, J5
+                names = [f"J{i+1}" for i in range(len(positions_deg))]
 
-            # Pad arrays to length 6 if shorter
-            while len(positions) < 6:
-                positions.append(0.0)
-            while len(velocities) < 6:
-                velocities.append(0.0)
-            while len(names) < 6:
-                names.append(f"joint_{len(names)}")
+            # Ensure we have exactly 5 joints
+            while len(positions_deg) < 5:
+                positions_deg.append(0.0)
+            while len(velocities_deg) < 5:
+                velocities_deg.append(0.0)
+            while len(names) < 5:
+                names.append(f"J{len(names)+1}")
 
             self.latest_feedback = {
-                "joint_positions": positions,
-                "joint_velocities": velocities,
+                "joint_positions": positions_deg,
+                "joint_velocities": velocities_deg,
                 "joint_names": names
             }
         except Exception as e:
@@ -742,14 +748,29 @@ def send_arm_velocity(request):
         logging.error("Invalid JSON in send_arm_velocity.")
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-    if not isinstance(velocities, list) or len(velocities) != 6:
+    if not isinstance(velocities, list):
         return JsonResponse(
-            {"error": "Expected 'joint_velocities' as a list of 6 numbers."},
+            {"error": "Expected 'joint_velocities' as a list of numbers."},
+            status=400
+        )
+
+    # For now, only command the first 5 joints.
+    # If a 6th element (gripper) is provided, it is ignored.
+    if len(velocities) == 6:
+        # Commented out, but kept for reference:
+        # full_velocities = velocities
+        velocities = velocities[:5]
+    elif len(velocities) == 5:
+        # Already only joints 1–5.
+        pass
+    else:
+        return JsonResponse(
+            {"error": "Expected 'joint_velocities' as a list of 5 or 6 numbers."},
             status=400
         )
 
     try:
-        # Publish to the ROS2 topic
+        # Publish to the ROS2 topic with only the first 5 joints.
         arm_velocity_node.publish_velocity(velocities)
         return JsonResponse({"status": "velocity command sent"})
     except Exception as e:
@@ -851,7 +872,7 @@ if ROS_IMPORTS_AVAILABLE:
             self.latest_msg = None
             self.subscription = self.create_subscription(
                 BatteryInfo,
-                "/battery_info",
+                "/battery/battery_info",
                 self.listener_callback,
                 10,
             )
@@ -870,7 +891,7 @@ if ROS_IMPORTS_AVAILABLE:
             self.latest_msg = None
             self.subscription = self.create_subscription(
                 BmsStatus,
-                "/bms_status",
+                "/battery/bms_status",
                 self.listener_callback,
                 10,
             )

@@ -1,6 +1,6 @@
 import rclpy
 from rclpy.node import Node
-from custom_msgs.msg import CustomMessage  # Import the custom message
+from kanga_interfaces.msg import CustomMessage  # Import the custom message
 
 class CustomMessageSubscriber(Node):
     def __init__(self):

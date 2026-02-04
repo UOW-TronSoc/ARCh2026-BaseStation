@@ -20,7 +20,7 @@ from sensor_msgs.msg import JointState
 from std_msgs.msg import String
 
 # Your custom messages (as imported by views.py)
-from custom_msgs.msg import (
+from kanga_interfaces.msg import (
     DrivetrainFeedback,
     ScienceFeedback,
     RadioFeedback,
