@@ -6,11 +6,11 @@ import IncrementalMovementCard from "components/IncrementalMovementCard/Incremen
 import ArmFeedbackCard from "components/ArmFeedbackCard/ArmFeedbackCard";
 import ArmSim from "components/ArmSim/ArmSim";
 import LocationPresetCard from "components/LocationPresetCard/LocationPresetCard";
-
+import { getApiBase } from "../../config";
 
 export default function ArmControl() {
   document.title = "Arm Control"
-  const API_BASE = "http://127.0.0.1:8000/api";
+  const API_BASE = getApiBase();
   const NUM_CAMS = 5;
 
   // ─── State ─────────────────────────────────────────────────────────────────────

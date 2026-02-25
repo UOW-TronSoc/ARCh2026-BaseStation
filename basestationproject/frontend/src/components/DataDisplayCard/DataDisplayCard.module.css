@@ -1,17 +1,117 @@
-/* spacing groups inside card */
-.section{ gap:var(--space-md); }
-
-/* separators between stacked items */
-.radio-basic div+div,
-.battery-content div+div,
-.pitch-roll div+div{
-  margin-top:var(--space-xs);
-  padding-top:var(--space-xs);
-  border-top:1px solid rgba(255,255,255,.2);
+/* card container */
+.card {
+  background: var(--card-alt-bg);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.inlineList{
-  font-family:monospace;
-  white-space:normal;
-  word-break:break-word;
+/* main title */
+.title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  margin-bottom: var(--space-lg);
+  padding-bottom: var(--space-sm);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--card-alt-fg);
+}
+
+/* each section block */
+.section {
+  margin-bottom: var(--space-sm);
+  padding: var(--space-sm) 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.section:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.sectionTitle {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: var(--space-xs);
+}
+
+/* row: label + value */
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: var(--space-xs) 0;
+  margin-bottom: var(--space-xs);
+  line-height: 1.4;
+}
+
+.rowLabel {
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 0.9rem;
+}
+
+.rowValue {
+  font-weight: 600;
+  color: var(--card-alt-fg);
+  font-size: 0.95rem;
+}
+
+/* battery: compact two-column rows */
+.batteryGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.15rem 0.75rem;
+  font-size: 0.8rem;
+}
+
+.batteryItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.35rem;
+}
+
+.batteryItem .rowLabel {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.65);
+  white-space: nowrap;
+}
+
+.batteryItem .rowValue {
+  font-size: 0.8rem;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+/* subsections (cell voltages, fault bits) — compact */
+.subsection {
+  margin-top: var(--space-sm);
+  padding-top: var(--space-xs);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.subsectionTitle {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.55);
+  margin-bottom: 0.15rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.inlineList {
+  font-family: monospace;
+  font-size: 0.72rem;
+  white-space: normal;
+  word-break: break-word;
+  color: rgba(255, 255, 255, 0.8);
+  line-height: 1.35;
+}
+
+.measuring {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.9rem;
+  font-style: italic;
 }

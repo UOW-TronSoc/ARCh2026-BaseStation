@@ -25,7 +25,8 @@ SECRET_KEY = 'django-insecure-&1pq07r=(c=h%t+_5v%f^$@99l3tfc77r*=nlv#&%%_*iw(#$w
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['*']
+# Allow server IP (10.0.0.1) and client IP (10.0.0.2) when binding to eth interface
+ALLOWED_HOSTS = ['*', '10.0.0.1', '10.0.0.2']
 
 
 # Application definition
@@ -52,6 +53,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'backendapi.request_logging_middleware.RequestLoggingMiddleware',
 ]
 
 ROOT_URLCONF = 'basestationproject.urls'
@@ -80,8 +82,15 @@ CSRF_TRUSTED_ORIGINS = [
   "http://127.0.0.1:3000",
   'http://localhost:8000',
   'http://localhost:8080',
-  
-  'http://django_server:8000'
+  'http://127.0.0.1:8080',
+  'http://django_server:8000',
+  # Access from client at 10.0.0.2 to server at 10.0.0.1
+  'http://10.0.0.1',
+  'http://10.0.0.1:8000',
+  'http://10.0.0.1:8080',
+  'http://10.0.0.2',
+  'http://10.0.0.2:3000',
+  'http://10.0.0.2:8080',
 ]
 
 CORS_ALLOW_ALL_ORIGINS = True

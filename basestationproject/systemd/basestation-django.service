@@ -1,0 +1,19 @@
+[Unit]
+Description=Basestation Django (API, ROS2)
+After=network.target
+
+[Service]
+Type=simple
+User=kanga
+WorkingDirectory=/home/kanga/kanga/ARCh2026-BaseStation/basestationproject
+Environment=KANGA_ROS2_WS=/home/kanga/kanga/ARCH2026-Kanga
+# If Django is in a venv, set e.g. BASESTATION_VENV=/home/kanga/kanga/ARCh2026-BaseStation/basestationproject/venv
+Environment=PATH=/home/kanga/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/kanga/kanga/ARCh2026-BaseStation/basestationproject/scripts/source_ros2_and_run.sh python3 manage.py runserver 0.0.0.0:8000
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

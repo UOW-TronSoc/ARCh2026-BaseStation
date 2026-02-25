@@ -14,6 +14,8 @@ from rest_framework.decorators import api_view
 from rest_framework import viewsets
 
 # ROS 2 and Message Imports
+# Custom messages: use only /home/kanga/kanga/ARCH2026-Kanga/src/kanga_interfaces (single source of truth).
+# Standard ROS messages (sensor_msgs, std_msgs) used only where kanga_interfaces has no equivalent.
 import rclpy
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
@@ -21,15 +23,21 @@ import logging
 
 try:
     from sensor_msgs.msg import Image, CompressedImage, JointState
-    from kanga_interfaces.msg import ScienceFeedback, ScienceControl, RadioFeedback, CoreFeedback, BmsStatus, BatteryInfo
     from std_msgs.msg import String, Bool, Empty
+    from kanga_interfaces.msg import (
+        # ScienceFeedback,
+        # ScienceControl,
+        # RadioFeedback,
+        # CoreFeedback,
+        BmsStatus,
+        BatteryInfo,
+        # RoverLog,
+    )
 
     ROS_IMPORTS_AVAILABLE = True
-    
+
 except ImportError as e:
     ROS_IMPORTS_AVAILABLE = False
-
-
     logging.warning(f"ROS message imports failed: {e}. Some features may not work.")
 
 
@@ -74,6 +82,12 @@ def update_checklist_task(request, task_id):
         task.value = data.get("value", task.value)
         task.save()
         return JsonResponse({"status": "success"})
+
+
+@require_GET
+def status_view(request):
+    """GET /api/status/ — backend health/connectivity check for the navbar."""
+    return JsonResponse({"status": "ok", "connected": True})
 
 
 class ROS2Manager:
@@ -241,6 +255,29 @@ camera_nodes = initialize_cameras()
 def get_camera_list(request):
     """Return the list of camera names (same order as CAMERA_TOPICS)."""
     return JsonResponse({"cameras": list(CAMERA_TOPICS)})
+
+
+# -----------------------------------------------------------------------------
+# Link latency (antenna / network RTT)
+# Frontend times the round-trip to this endpoint to show latency between
+# basestation (e.g. 10.0.0.1) and the device viewing the site (e.g. 10.0.0.2).
+# -----------------------------------------------------------------------------
+@require_GET
+def link_latency(request):
+    """
+    GET /api/link-latency/
+    Returns minimal JSON so the client can measure RTT.
+    Client measures: (time when response received) - (time when request sent).
+    """
+    client_ip = request.META.get("REMOTE_ADDR", "")
+    x_forwarded = request.META.get("HTTP_X_FORWARDED_FOR")
+    if x_forwarded:
+        client_ip = x_forwarded.split(",")[0].strip()
+    return JsonResponse({
+        "ok": True,
+        "ts": int(time.time() * 1000),
+        "client_ip": client_ip,
+    })
 
 
 # -----------------------------------------------------------------------------
@@ -412,160 +449,159 @@ ros_manager.add_node(feedback_node)
 
 # ----------------------------
 
-# Core Feedback
+# Core Feedback (commented out for now)
 
 # ----------------------------
-
-class CoreFeedbackSubscriber(Node):
-    def __init__(self):
-        super().__init__('core_feedback_subscriber')
-        try:
-            self.subscription = self.create_subscription(
-                CoreFeedback, '/core_feedback', self.feedback_callback, 10
-            )
-            self.latest_feedback = {}
-        except Exception as e:
-            logging.error(f"Error initializing core feedback subscriber: {e}")
-
-    def feedback_callback(self, msg):
-        try:
-            self.latest_feedback = {
-                "epoch_time": int(msg.epoch_time),
-
-                "wheel_position": [float(x) for x in msg.wheel_position],
-                "wheel_velocity": [float(x) for x in msg.wheel_velocity],
-                "wheel_torque": [float(x) for x in msg.wheel_torque],
-
-                "pitch": round(float(msg.pitch), 2),
-                "roll": round(float(msg.roll), 2),
-            }
-        except Exception as e:
-            logging.error(f"Error processing core feedback: {e}")
-
-
-core_feedback_node = CoreFeedbackSubscriber()
-ros_manager.add_node(core_feedback_node)
-
-
-def get_core_feedback(request):
-    try:
-        if core_feedback_node.latest_feedback:
-            return JsonResponse(core_feedback_node.latest_feedback)
-        return JsonResponse({"error": "No feedback available"}, status=204)
-    except Exception as e:
-        logging.error(f"Error retrieving core feedback: {e}")
-        return JsonResponse({"error": f"Failed to retrieve feedback: {e}"}, status=500)
-
-
-# ----------------------------
-
-# Science Control
-
-# ----------------------------
-
-class ScienceFeedbackSubscriber(Node):
-    # Subscriber to Science Feedback topic
-    def __init__(self):
-        super().__init__('science_feedback_subscriber')
-        self.subscription = self.create_subscription(
-            ScienceFeedback, '/science_feedback', self.feedback_callback, 10
-        )
-        self.latest_feedback = {}
-
-    def feedback_callback(self, msg):
-        self.latest_feedback = {
-            "rfid": msg.rfid,
-            "moisture": msg.moisture,
-            "potentiometer": msg.potentiometer,
-            "limit": msg.limit,
-            "height": msg.height,
-        }
-
-# Science Control Publisher
-class ScienceControlPublisher(Node):
-    # Publisher to Science Control topic
-    def __init__(self):
-        super().__init__('science_control_publisher')
-        self.publisher = self.create_publisher(ScienceControl, '/science_control', 10)
-
-    def publish_control(self, data):
-        msg = ScienceControl()
-        msg.linear_actuator = data.get("linear_actuator", 0)
-        msg.req_height = data.get("req_height", False)
-        msg.req_nir = data.get("req_nir", False)
-        self.publisher.publish(msg)
-
-
-# Initialize Science Feedback Subscriber
-science_feedback_node = ScienceFeedbackSubscriber()
-ros_manager.add_node(science_feedback_node)
-
-# Initialize Science Control Publisher
-science_control_node = ScienceControlPublisher()
-ros_manager.add_node(science_control_node)
-
-
-def get_science_feedback(request):
-    # Retrieve the latest science feedback data
-    if science_feedback_node.latest_feedback:
-        return JsonResponse(science_feedback_node.latest_feedback)
-    return JsonResponse({"error": "No science feedback available"}, status=204)
-
-
-@csrf_exempt
-def set_science_control(request):
-    # Set science control settings via a ROS2 publisher
-    if request.method == "POST":
-        try:
-            data = json.loads(request.body)
-            science_control_node.publish_control(data)
-            return JsonResponse({"status": "success", "message": "Science control command sent!"})
-        except json.JSONDecodeError:
-            logging.error(f"Invalid JSON received: {e}")
-            return JsonResponse({"error": "Invalid JSON"}, status=400)
-        except Exception as e:
-            logging.error(f"Unexpected error processing science control: {e}")
-            return JsonResponse({"error": "Internal server error"}, status=500)
-    
-    return JsonResponse({"error": "Invalid request method"}, status=405)
+# class CoreFeedbackSubscriber(Node):
+#     def __init__(self):
+#         super().__init__('core_feedback_subscriber')
+#         try:
+#             self.subscription = self.create_subscription(
+#                 CoreFeedback, '/core_feedback', self.feedback_callback, 10
+#             )
+#             self.latest_feedback = {}
+#         except Exception as e:
+#             logging.error(f"Error initializing core feedback subscriber: {e}")
+#
+#     def feedback_callback(self, msg):
+#         try:
+#             self.latest_feedback = {
+#                 "epoch_time": int(msg.epoch_time),
+#
+#                 "wheel_position": [float(x) for x in msg.wheel_position],
+#                 "wheel_velocity": [float(x) for x in msg.wheel_velocity],
+#                 "wheel_torque": [float(x) for x in msg.wheel_torque],
+#
+#                 "pitch": round(float(msg.pitch), 2),
+#                 "roll": round(float(msg.roll), 2),
+#             }
+#         except Exception as e:
+#             logging.error(f"Error processing core feedback: {e}")
+#
+#
+# core_feedback_node = CoreFeedbackSubscriber()
+# ros_manager.add_node(core_feedback_node)
+#
+#
+# def get_core_feedback(request):
+#     try:
+#         if core_feedback_node.latest_feedback:
+#             return JsonResponse(core_feedback_node.latest_feedback)
+#         return JsonResponse({"error": "No feedback available"}, status=204)
+#     except Exception as e:
+#         logging.error(f"Error retrieving core feedback: {e}")
+#         return JsonResponse({"error": f"Failed to retrieve feedback: {e}"}, status=500)
 
 
 # ----------------------------
 
-# Log Pub-sub
+# Science Control (commented out for now)
+
+# ----------------------------
+# class ScienceFeedbackSubscriber(Node):
+#     # Subscriber to Science Feedback topic
+#     def __init__(self):
+#         super().__init__('science_feedback_subscriber')
+#         self.subscription = self.create_subscription(
+#             ScienceFeedback, '/science_feedback', self.feedback_callback, 10
+#         )
+#         self.latest_feedback = {}
+#
+#     def feedback_callback(self, msg):
+#         self.latest_feedback = {
+#             "rfid": msg.rfid,
+#             "moisture": msg.moisture,
+#             "potentiometer": msg.potentiometer,
+#             "limit": msg.limit,
+#             "height": msg.height,
+#         }
+#
+# # Science Control Publisher
+# class ScienceControlPublisher(Node):
+#     # Publisher to Science Control topic
+#     def __init__(self):
+#         super().__init__('science_control_publisher')
+#         self.publisher = self.create_publisher(ScienceControl, '/science_control', 10)
+#
+#     def publish_control(self, data):
+#         msg = ScienceControl()
+#         msg.linear_actuator = data.get("linear_actuator", 0)
+#         msg.req_height = data.get("req_height", False)
+#         msg.req_nir = data.get("req_nir", False)
+#         self.publisher.publish(msg)
+#
+#
+# # Initialize Science Feedback Subscriber
+# science_feedback_node = ScienceFeedbackSubscriber()
+# ros_manager.add_node(science_feedback_node)
+#
+# # Initialize Science Control Publisher
+# science_control_node = ScienceControlPublisher()
+# ros_manager.add_node(science_control_node)
+#
+#
+# def get_science_feedback(request):
+#     # Retrieve the latest science feedback data
+#     if science_feedback_node.latest_feedback:
+#         return JsonResponse(science_feedback_node.latest_feedback)
+#     return JsonResponse({"error": "No science feedback available"}, status=204)
+#
+#
+# @csrf_exempt
+# def set_science_control(request):
+#     # Set science control settings via a ROS2 publisher
+#     if request.method == "POST":
+#         try:
+#             data = json.loads(request.body)
+#             science_control_node.publish_control(data)
+#             return JsonResponse({"status": "success", "message": "Science control command sent!"})
+#         except json.JSONDecodeError:
+#             logging.error(f"Invalid JSON received: {e}")
+#             return JsonResponse({"error": "Invalid JSON"}, status=400)
+#         except Exception as e:
+#             logging.error(f"Unexpected error processing science control: {e}")
+#             return JsonResponse({"error": "Internal server error"}, status=500)
+#
+#     return JsonResponse({"error": "Invalid request method"}, status=405)
+
 
 # ----------------------------
 
-class RoverLogsSubscriber(Node):
-    # Subscriber for the Rover_Logs topic
-    def __init__(self):
-        super().__init__('rover_logs_subscriber')
-        self.subscription = self.create_subscription(
-            String, 'rover_logs', self.log_callback, 10
-        )
-        self.latest_logs = []
+# Log Pub-sub (RoverLogs commented out for now)
 
-    def log_callback(self, msg):
-        # Store received log messages
-        log_message = msg.data
-        self.latest_logs.append(log_message)
-        self.get_logger().info(f"Received log: {log_message}")
-
-# Initialize the log subscriber and add to ROS2 Manager
-rover_logs_node = RoverLogsSubscriber()
-ros_manager.add_node(rover_logs_node)
-
-# Django API Endpoint to Fetch Logs
-def get_rover_logs(request):
-    # Retrieve logs from the Rover_Logs topic
-    try:
-        if rover_logs_node.latest_logs:
-            return JsonResponse({"logs": rover_logs_node.latest_logs})
-        return JsonResponse({"logs": [], "message": "No logs received yet."}, status=204)
-    except Exception as e:
-        logging.error(f"Error retrieving rover logs: {e}")
-        return JsonResponse({"error": "Failed to retrieve logs"}, status=500)
-
+# ----------------------------
+# class RoverLogsSubscriber(Node):
+#     """Subscriber for rover logs using ARCH2026-Kanga/src/kanga_interfaces msg (single source of truth)."""
+#     def __init__(self):
+#         super().__init__('rover_logs_subscriber')
+#         self.subscription = self.create_subscription(
+#             RoverLog, 'rover_logs', self.log_callback, 10
+#         )
+#         self.latest_logs = []
+#
+#     def log_callback(self, msg: RoverLog):
+#         entry = {
+#             "timestamp": getattr(msg, "timestamp", 0),
+#             "topic_type": getattr(msg, "topic_type", ""),
+#             "topic_name": getattr(msg, "topic_name", ""),
+#             "topic_message": getattr(msg, "topic_message", ""),
+#         }
+#         self.latest_logs.append(entry)
+#         self.get_logger().info(f"Received log: {entry.get('topic_message', '')}")
+#
+# # Initialize the log subscriber and add to ROS2 Manager
+# rover_logs_node = RoverLogsSubscriber()
+# ros_manager.add_node(rover_logs_node)
+#
+# # Django API Endpoint to Fetch Logs (RoverLog from kanga_interfaces)
+# def get_rover_logs(request):
+#     try:
+#         if rover_logs_node.latest_logs:
+#             return JsonResponse({"logs": rover_logs_node.latest_logs})
+#         return JsonResponse({"logs": [], "message": "No logs received yet."}, status=204)
+#     except Exception as e:
+#         logging.error(f"Error retrieving rover logs: {e}")
+#         return JsonResponse({"error": "Failed to retrieve logs"}, status=500)
 
 
 # ----------------------------
@@ -815,47 +851,45 @@ def get_arm_feedback(request):
 
 # ----------------------------
 
-# Radio Feedback & Sub
+# Radio Feedback & Sub (commented out for now)
 
 # ----------------------------
-
-class RadioFeedbackSubscriber(Node):
-    # Subscriber to /radio_feedback topic
-    def __init__(self):
-        super().__init__('radio_feedback_subscriber')
-        try:
-            self.subscription = self.create_subscription(
-                RadioFeedback, '/radio_feedback', self.feedback_callback, 10
-            )
-            self.latest_feedback = {}
-        except Exception as e:
-            logging.error(f"Error initializing radio feedback subscriber: {e}")
-
-    def feedback_callback(self, msg):
-        try:
-            self.latest_feedback = {
-                "connection": "Connected",
-                "strength": f"{msg.signal_strength:.1f} dBm",
-                "ping": msg.ping_ms,
-                "received": msg.rx_bytes,
-                "sent": msg.tx_bytes
-            }
-        except Exception as e:
-            logging.error(f"Error processing radio feedback: {e}")
-
-
-radio_feedback_node = RadioFeedbackSubscriber()
-ros_manager.add_node(radio_feedback_node)
-
-def get_radio_feedback(request):
-    try:
-        if radio_feedback_node.latest_feedback:
-            return JsonResponse(radio_feedback_node.latest_feedback)
-        return JsonResponse({"error": "No radio feedback available"}, status=204)
-    except Exception as e:
-        logging.error(f"Error retrieving radio feedback: {e}")
-        return JsonResponse({"error": "Failed to retrieve radio feedback"}, status=500)
-
+# class RadioFeedbackSubscriber(Node):
+#     # Subscriber to /radio_feedback topic
+#     def __init__(self):
+#         super().__init__('radio_feedback_subscriber')
+#         try:
+#             self.subscription = self.create_subscription(
+#                 RadioFeedback, '/radio_feedback', self.feedback_callback, 10
+#             )
+#             self.latest_feedback = {}
+#         except Exception as e:
+#             logging.error(f"Error initializing radio feedback subscriber: {e}")
+#
+#     def feedback_callback(self, msg):
+#         try:
+#             self.latest_feedback = {
+#                 "connection": "Connected",
+#                 "strength": f"{msg.signal_strength:.1f} dBm",
+#                 "ping": msg.ping_ms,
+#                 "received": msg.rx_bytes,
+#                 "sent": msg.tx_bytes
+#             }
+#         except Exception as e:
+#             logging.error(f"Error processing radio feedback: {e}")
+#
+#
+# radio_feedback_node = RadioFeedbackSubscriber()
+# ros_manager.add_node(radio_feedback_node)
+#
+# def get_radio_feedback(request):
+#     try:
+#         if radio_feedback_node.latest_feedback:
+#             return JsonResponse(radio_feedback_node.latest_feedback)
+#         return JsonResponse({"error": "No radio feedback available"}, status=204)
+#     except Exception as e:
+#         logging.error(f"Error retrieving radio feedback: {e}")
+#         return JsonResponse({"error": "Failed to retrieve radio feedback"}, status=500)
 
 
 # ----------------------------
@@ -1106,3 +1140,23 @@ def get_log_file(request, filename):
     except Exception as e:
         logging.error(f"Error reading log file {full_path}: {e}")
         return JsonResponse({"error": "Failed to read file"}, status=500)
+
+
+# ----------------------------
+# Django server logs (in-memory buffer)
+# ----------------------------
+from backendapi.log_buffer import get_django_log_lines
+
+
+@require_GET
+def get_django_logs(request):
+    """
+    GET /api/django-logs/
+    Returns JSON: { "lines": ["...", ...] } from the in-memory Django log buffer.
+    """
+    try:
+        lines = get_django_log_lines()
+        return JsonResponse({"lines": lines})
+    except Exception as e:
+        logging.error(f"Error retrieving Django logs: {e}")
+        return JsonResponse({"error": "Failed to retrieve logs", "lines": []}, status=500)

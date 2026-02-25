@@ -2,11 +2,10 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 import logo from "assets/logo.png";
 import './MainNavbar.css';
-
-const BACKEND_BASE = "http://127.0.0.1:8000";
+import { getBackendBase } from "../../config";
 
 export default function MainNavbar() {
-  const API = `${BACKEND_BASE}/api`;
+  const API = `${getBackendBase()}/api`;
   const [backendConnected, setBackendConnected] = useState(null);
   const [batteryInfo, setBatteryInfo] = useState({
     charge_pct: 0,
@@ -39,9 +38,10 @@ export default function MainNavbar() {
       try {
         const ctrl = new AbortController();
         const id = setTimeout(() => ctrl.abort(), 3000);
-        const r = await fetch(`${BACKEND_BASE}/api/`, { signal: ctrl.signal });
+        const r = await fetch(`${getBackendBase()}/api/status/`, { signal: ctrl.signal });
         clearTimeout(id);
-        setBackendConnected(r.ok || r.status < 500);
+        const ok = r.ok && r.status < 500;
+        setBackendConnected(ok);
       } catch {
         setBackendConnected(false);
       }

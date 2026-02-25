@@ -1,0 +1,17 @@
+[Unit]
+Description=Basestation frontend (Vite dev server)
+After=network.target
+
+[Service]
+Type=simple
+User=kanga
+WorkingDirectory=/home/kanga/kanga/ARCh2026-BaseStation/basestationproject/frontend
+ExecStart=/home/kanga/kanga/ARCh2026-BaseStation/basestationproject/scripts/run_npm_dev.sh
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+Environment=CI=1
+
+[Install]
+WantedBy=multi-user.target

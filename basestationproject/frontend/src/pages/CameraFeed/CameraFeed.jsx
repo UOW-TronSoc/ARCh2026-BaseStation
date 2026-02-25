@@ -5,8 +5,9 @@ import "./CameraFeed.css";
 import * as THREE from "three";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, Html } from "@react-three/drei";
+import { getApiBase } from "../../config";
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
+const API_BASE = import.meta.env.VITE_API_URL || getApiBase();
 
 /**
  * Hook that polls MJPEG URLs and updates THREE.Textures.

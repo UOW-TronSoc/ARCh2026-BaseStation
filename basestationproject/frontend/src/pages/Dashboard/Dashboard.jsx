@@ -6,6 +6,7 @@ import VideoFeedCard from "components/VideoFeedCard/VideoFeedCard";
 import DataDisplayCard from "components/DataDisplayCard/DataDisplayCard";
 import DrivetrainCard from "components/DrivetrainCard/DrivetrainCard";
 import SpeedControlCard from "components/SpeedControlCard/SpeedControlCard";
+import { getApiBase, getCommandUrl } from "../../config";
 
 const EPSILON = 0.01;
 const MAX_TWIST = 20; // absolute range for linear/Angular components
@@ -43,7 +44,6 @@ export default function Dashboard() {
   /* ------------------------------------------------------------------ */
   /*  Constants & initial state                                         */
   /* ------------------------------------------------------------------ */
-  const API_BASE = "http://127.0.0.1:8000/api";
   const NUM_CAMS = 5;
 
   const [camId, setCamId] = useState(0);
@@ -72,13 +72,8 @@ export default function Dashboard() {
     source_timestamp: null,
   });
 
-  const [radio, setRadio] = useState({
-    connection: "N/A",
-    strength: "N/A",
-    ping: "N/A",
-    received: "N/A",
-    sent: "N/A",
-  });
+  const [linkLatencyMs, setLinkLatencyMs] = useState(null);
+  const [linkClientIp, setLinkClientIp] = useState(null);
 
   const [speed, setSpeed] = useState(100);
   const [speedEnabled, setSpeedEnabled] = useState(true);
@@ -132,20 +127,11 @@ export default function Dashboard() {
   }, []);
 
   /* ------------------------------------------------------------------ */
-  /*  REST fetchers (core, battery, radio)                              */
+  /*  REST fetchers (battery, link-latency) — core-feedback off          */
   /* ------------------------------------------------------------------ */
-  const fetchCoreFeedback = async () => {
-    try {
-      const { data } = await axios.get(`${API_BASE}/core-feedback/`);
-      setCoreFeedback((prev) => ({ ...prev, ...data }));
-    } catch (err) {
-      console.error("Failed to fetch core feedback:", err.message);
-    }
-  };
-
   const fetchBattery = async () => {
     try {
-      const { data } = await axios.get(`${API_BASE}/battery-feedback/`);
+      const { data } = await axios.get(`${getApiBase()}/battery-feedback/`);
       setBatteryInfo({
         charge_pct: data.charge_pct ?? 0,
         current_draw: data.current_draw ?? 0,
@@ -169,18 +155,17 @@ export default function Dashboard() {
   };
 
 
-  const fetchRadio = async () => {
+  const fetchLinkLatency = async () => {
     try {
-      const { data } = await axios.get(`${API_BASE}/radio-feedback/`);
-      setRadio({
-        connection: data.connection ?? "N/A",
-        strength: data.strength ?? "N/A",
-        ping: data.ping ?? "N/A",
-        received: data.received ?? "N/A",
-        sent: data.sent ?? "N/A",
-      });
+      const t0 = performance.now();
+      const { data } = await axios.get(`${getApiBase()}/link-latency/`);
+      const t1 = performance.now();
+      const rttMs = Math.round(t1 - t0);
+      setLinkLatencyMs(rttMs);
+      if (data.client_ip) setLinkClientIp(data.client_ip);
     } catch (err) {
-      console.error("Failed to fetch radio status:", err.message);
+      setLinkLatencyMs(null);
+      console.error("Failed to measure link latency:", err.message);
     }
   };
 
@@ -222,19 +207,21 @@ export default function Dashboard() {
     };
   }, [recalcKeyboardTwist]);
 
-  /* Poll every 2 s */
+  /* Poll every refresh_rate ms */
   useEffect(() => {
-    fetchCoreFeedback();
     fetchBattery();
-    fetchRadio();
+    fetchLinkLatency();
     const timer = setInterval(() => {
-      fetchCoreFeedback();
       fetchBattery();
-
-      
-      fetchRadio();
     }, refresh_rate);
     return () => clearInterval(timer);
+  }, []);
+
+  /* Link latency (antenna RTT) every 2 s */
+  useEffect(() => {
+    fetchLinkLatency();
+    const latencyTimer = setInterval(fetchLinkLatency, 2000);
+    return () => clearInterval(latencyTimer);
   }, []);
 
   /* ------------------------------------------------------------------ */
@@ -247,7 +234,7 @@ export default function Dashboard() {
 
   const sendTwistCommand = useCallback(async (payload) => {
     try {
-      await axios.post("http://localhost:8080/command", payload);
+      await axios.post(getCommandUrl(), payload);
     } catch (err) {
       console.error("Failed to send drive command:", err.message);
     }
@@ -388,57 +375,55 @@ export default function Dashboard() {
   /* (VideoFeedCard, DataDisplayCard, VideoFeedCard, DrivetrainCard, SpeedControlCard ) */
   /* ---------------------------------------------------------------------------------- */
   return (
-    <div className="container my-4">
-      {/* ────────────────────── ROW 1 ────────────────────── */}
-      <div className="row gx-4">
-        <div className="col-lg-8">
-          <VideoFeedCard
-            api={API_BASE}
-            camId={camId}
-            setCamId={setCamId}
-            showDropdown
-          />
-        </div>
-        <div className="col-lg-4 mt-3 mt-md-0 mt-lg-0">
-          <DataDisplayCard
-            radio={radio}
-            battery={batteryInfo}
-            pitch={coreFeedback.pitch}
-            roll={coreFeedback.roll}
-          />
-        </div>
-      </div>
-
-      <div className="mt-2" />
-
-      {/* ────────────────────── ROW 2 ────────────────────── */}
-      <div className="row gx-4 pb-5">
-        <div className="col-lg-6 mt-3">
-          {/* second camera: next ID, no dropdown */}
-          <VideoFeedCard
-            api={API_BASE}
-            camId={(camId + 1) % NUM_CAMS}
-            setCamId={() => {}}
-            showDropdown={false}
-          />
+    <div className="dashboardPage">
+      <div className="container">
+        {/* ────────────────────── ROW 1 ────────────────────── */}
+        <div className="row dashboardRow1 gx-2 gy-1">
+          <div className="col-lg-8">
+            <VideoFeedCard
+              api={getApiBase()}
+              camId={camId}
+              setCamId={setCamId}
+              showDropdown
+            />
+          </div>
+          <div className="col-lg-4">
+            <DataDisplayCard
+              battery={batteryInfo}
+              pitch={coreFeedback.pitch}
+              roll={coreFeedback.roll}
+              linkLatencyMs={linkLatencyMs}
+              linkClientIp={linkClientIp}
+            />
+          </div>
         </div>
 
-        <div className="col-lg-3 mt-3">
-          <DrivetrainCard
-            timestamp={coreFeedback.epoch_time}
-            linear={effectiveTwist.linear}
-            angular={effectiveTwist.angular}
-          />
-        </div>
-
-        <div className="col-lg-3 mt-3">
-          <SpeedControlCard
-            speed={speed}
-            setSpeed={setSpeed}
-            enabled={speedEnabled}
-            setEnabled={setSpeedEnabled}
-            controllerInfo={controllerInfo}
-          />
+        {/* ────────────────────── ROW 2 ────────────────────── */}
+        <div className="row dashboardRow2 gx-2 gy-1 mt-1 pb-2">
+          <div className="col-lg-6">
+            <VideoFeedCard
+              api={getApiBase()}
+              camId={(camId + 1) % NUM_CAMS}
+              setCamId={() => {}}
+              showDropdown={false}
+            />
+          </div>
+          <div className="col-lg-3">
+            <DrivetrainCard
+              timestamp={coreFeedback.epoch_time}
+              linear={effectiveTwist.linear}
+              angular={effectiveTwist.angular}
+            />
+          </div>
+          <div className="col-lg-3">
+            <SpeedControlCard
+              speed={speed}
+              setSpeed={setSpeed}
+              enabled={speedEnabled}
+              setEnabled={setSpeedEnabled}
+              controllerInfo={controllerInfo}
+            />
+          </div>
         </div>
       </div>
     </div>

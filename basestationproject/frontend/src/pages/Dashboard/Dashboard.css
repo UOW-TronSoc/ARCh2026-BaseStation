@@ -4,6 +4,35 @@ body{ background:var(--bg-page); }
 /* generic heading accent (used in several cards) */
 .header{ color:var(--nav-fg-active); }
 
+/* ───────────────── Dashboard: fit in 100vh (below navbar) ───────────────── */
+.dashboardPage {
+  max-height: calc(100vh - 56px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboardPage .container {
+  flex: 1;
+  min-height: 0;
+  padding-top: var(--space-sm);
+  padding-bottom: var(--space-sm);
+}
+
+.dashboardPage .row {
+  --bs-gutter-x: 0.75rem;
+  --bs-gutter-y: 0.5rem;
+}
+
+.dashboardPage .dashboardRow1 {
+  flex: 1;
+  min-height: 0;
+}
+
+.dashboardPage .dashboardRow2 {
+  flex-shrink: 0;
+}
+
 /* ───────────────── shared card styling ───────────────── */
 .card {
   background: var(--card-alt-bg);

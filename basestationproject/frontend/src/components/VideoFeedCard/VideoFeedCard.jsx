@@ -32,23 +32,19 @@ export default function VideoFeedCard({ api }) {
     }
   }, [cameras, selectedCamera]);
 
+  // Update image src directly (no fetch). Same approach as CameraFeed: one request per frame
+  // so the browser streams the MJPEG frame. Using fetch() here doubled requests and added latency.
   useEffect(() => {
     if (feedEnabled && selectedCamera) {
+      setLive(true);
       intervalRef.current = setInterval(() => {
-        const newSrc = `${api}/video_feed/${encodeURIComponent(selectedCamera)}/?time=${Date.now()}`;
-        fetch(newSrc)
-          .then((res) => {
-            if (res.ok) {
-              setImageSrc(newSrc);
-              setLive(true);
-            } else {
-              setLive(false);
-            }
-          })
-          .catch(() => setLive(false));
-      }, 33); // ~30fps
+        setImageSrc(
+          `${api}/video_feed/${encodeURIComponent(selectedCamera)}/?time=${Date.now()}`
+        );
+      }, 1000 / 15); // ~15 FPS to match CameraFeed and reduce load when multiple cards are shown
     } else {
       setLive(false);
+      setImageSrc("");
       clearInterval(intervalRef.current);
     }
 

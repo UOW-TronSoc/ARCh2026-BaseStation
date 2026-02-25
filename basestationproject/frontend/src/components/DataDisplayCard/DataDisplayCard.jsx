@@ -1,7 +1,7 @@
 import React from "react";
 import styles from "./DataDisplayCard.module.css";
 
-export default function DataDisplayCard({ radio, battery, pitch, roll }) {
+export default function DataDisplayCard({ battery, pitch, roll, linkLatencyMs, linkClientIp }) {
   const safeNumber = (value, fractionDigits = 1) =>
     typeof value === "number" && !Number.isNaN(value)
       ? value.toFixed(fractionDigits)
@@ -20,103 +20,88 @@ export default function DataDisplayCard({ radio, battery, pitch, roll }) {
     return setBits.length > 0 ? `Faults: ${setBits.join(", ")}` : "OK";
   };
 
-  // console.log("Battery prop:", battery);
   return (
-    
     <div className={`card p-3 ${styles.card}`}>
-      <h4 className="mb-3 header">Data Display</h4>
+      <h4 className={styles.title}>Data Display</h4>
 
-      {/* Radio */}
+      {/* Link latency */}
       <section className={styles.section}>
-        {[
-          ["Connection", radio.connection],
-          ["Strength", radio.strength],
-          ["Ping", `${radio.ping} ms`],
-          ["RX", radio.received],
-          ["TX", radio.sent],
-        ].map(([k, v]) => (
-          <div key={k} className="d-flex justify-content-between">
-            <span>{k}</span>
-            <strong>{v}</strong>
-          </div>
-        ))}
+        <h6 className={styles.sectionTitle}>Link latency</h6>
+        {linkLatencyMs != null ? (
+          <>
+            <div className={styles.row}>
+              <span className={styles.rowLabel}>RTT</span>
+              <span className={styles.rowValue}>{linkLatencyMs} ms</span>
+            </div>
+            {linkClientIp && (
+              <div className={styles.row}>
+                <span className={styles.rowLabel}>Client</span>
+                <span className={styles.rowValue}>{linkClientIp}</span>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className={styles.measuring}>Measuring…</div>
+        )}
       </section>
 
       {/* Orientation */}
       <section className={styles.section}>
-        <div className="d-flex justify-content-between">
-          <span>Pitch</span>
-          <strong>{safeNumber(pitch, 2)}°</strong>
+        <h6 className={styles.sectionTitle}>Orientation</h6>
+        <div className={styles.row}>
+          <span className={styles.rowLabel}>Pitch</span>
+          <span className={styles.rowValue}>{safeNumber(pitch, 2)}°</span>
         </div>
-        <div className="d-flex justify-content-between mt-2">
-          <span>Roll</span>
-          <strong>{safeNumber(roll, 2)}°</strong>
+        <div className={styles.row}>
+          <span className={styles.rowLabel}>Roll</span>
+          <span className={styles.rowValue}>{safeNumber(roll, 2)}°</span>
         </div>
       </section>
 
-      {/* Battery */}
+      {/* Battery — compact grid */}
       <section className={styles.section}>
-        {[
-          [
-            "Battery Charge",
-            `${safeNumber(battery.charge_pct)}%`,
-            "Current Draw",
-            `${safeNumber(battery.current_draw)} A`,
-          ],
-          [
-            "Avg Temp",
-            `${safeNumber(battery.temperature)} °C`,
-            "Max Temp",
-            `${safeNumber(battery.temperature_max)} °C`,
-          ],
-          [
-            "Min Temp",
-            `${safeNumber(battery.temperature_min)} °C`,
-            "Charge State",
-            `${battery.charge_state ?? "--"}`,
-          ],
-          [
-            "Measured Voltage",
-            `${safeNumber(battery.measured_voltage, 2)} V`,
-            "Total Voltage",
-            `${safeNumber(battery.total_voltage, 2)} V`,
-          ],
-          [
-            "Capacity",
-            typeof battery.capacity === "number"
-              ? `${battery.capacity} mAh`
-              : "--",
-            "Source Stamp",
-            battery.source_timestamp
-              ? new Date(battery.source_timestamp * 1000).toLocaleTimeString()
-              : "--",
-          ],
-        ].map(([labelLeft, valueLeft, labelRight, valueRight]) => (
-          <div key={labelLeft} className="d-flex justify-content-between mt-3">
-            <span>
-              {labelLeft}
-              <br />
-              <strong>{valueLeft}</strong>
-            </span>
-            <span>
-              {labelRight}
-              <br />
-              <strong>{valueRight}</strong>
-            </span>
-          </div>
-        ))}
+        <h6 className={styles.sectionTitle}>Battery</h6>
+        <div className={styles.batteryGrid}>
+          {[
+            ["Charge", `${safeNumber(battery.charge_pct)}%`],
+            ["Current", `${safeNumber(battery.current_draw)} A`],
+            ["Avg Temp", `${safeNumber(battery.temperature)} °C`],
+            ["Max Temp", `${safeNumber(battery.temperature_max)} °C`],
+            ["Min Temp", `${safeNumber(battery.temperature_min)} °C`],
+            ["Charge State", `${battery.charge_state ?? "--"}`],
+            ["Measured V", `${safeNumber(battery.measured_voltage, 2)} V`],
+            ["Total V", `${safeNumber(battery.total_voltage, 2)} V`],
+            [
+              "Capacity",
+              typeof battery.capacity === "number"
+                ? `${battery.capacity} mAh`
+                : "--",
+            ],
+            [
+              "Stamp",
+              battery.source_timestamp
+                ? new Date(battery.source_timestamp * 1000).toLocaleTimeString()
+                : "--",
+            ],
+          ].map(([label, value]) => (
+            <div key={label} className={styles.batteryItem}>
+              <span className={styles.rowLabel}>{label}</span>
+              <span className={styles.rowValue}>{value}</span>
+            </div>
+          ))}
+        </div>
 
-        <div className="mt-3">
-          <span>Cell Voltages</span>
-          <div className={`mt-2 ${styles.inlineList}`}>
-            <small>{formatCellVoltages(battery.cell_voltages)}</small>
+        <div className={styles.subsection}>
+          <div className={styles.subsectionTitle}>Cell Voltages</div>
+          <div className={styles.inlineList}>
+            {formatCellVoltages(battery.cell_voltages)}
           </div>
         </div>
 
-        <div className="mt-3">
-          <span>Fault Bits</span>
-          <div className={`mt-2 ${styles.inlineList}`}>
-            <small>{formatFaultBits(battery.fault_bits)}</small>
+        <div className={styles.subsection}>
+          <div className={styles.subsectionTitle}>Fault Bits</div>
+          <div className={styles.inlineList}>
+            {formatFaultBits(battery.fault_bits)}
           </div>
         </div>
       </section>

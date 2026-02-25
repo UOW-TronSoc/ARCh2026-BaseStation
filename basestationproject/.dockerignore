@@ -11,7 +11,4 @@ frontend/dist/
 frontend/.vite/
 fastapi_server/__pycache__/
 fastapi_server/.venv/
-ros2_ws/build/
-ros2_ws/install/
-ros2_ws/log/
 supervisord.log

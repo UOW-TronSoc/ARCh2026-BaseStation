@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import "./Checklist.css";
+import { getApiBase } from "../../config";
 
-const ChecklistPage = () => {
+function Checklist() {
   document.title = "Checklist"
   const [groups, setGroups] = useState([]);
   const [selectedGroupId, setSelectedGroupId] = useState(null);
@@ -10,7 +11,7 @@ const ChecklistPage = () => {
   const [newTaskText, setNewTaskText] = useState("");
   const [showFields, setShowFields] = useState({});
 
-  const API_BASE = "http://127.0.0.1:8000/api";
+  const API_BASE = getApiBase();
 
   const topLevelTasks = checklist.filter((task) => task.parent === null);
   const getSubtasks = (parentId) =>
@@ -216,6 +217,6 @@ const ChecklistPage = () => {
       </ul>
     </div>
   );
-};
+}
 
-export default ChecklistPage;
+export default Checklist;
