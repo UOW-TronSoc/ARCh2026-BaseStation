@@ -6,13 +6,12 @@ body{ background:var(--bg-page); }
 
 /* ───────────────── Dashboard: fit in 100vh (below navbar) ───────────────── */
 .dashboardPage {
-  max-height: calc(100vh - 56px);
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
 }
 
-.dashboardPage .container {
+.dashboardPage .container,
+.dashboardPage .container-fluid {
   flex: 1;
   min-height: 0;
   padding-top: var(--space-sm);

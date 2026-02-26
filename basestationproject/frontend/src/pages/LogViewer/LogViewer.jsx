@@ -128,7 +128,7 @@ function LogViewer() {
   };
 
   return (
-    <div className="container my-4">
+    <div className="container-fluid px-3 logViewerPage">
       <h3 className="text-white">Log Viewer</h3>
 
       <ul className="nav nav-tabs mb-3">

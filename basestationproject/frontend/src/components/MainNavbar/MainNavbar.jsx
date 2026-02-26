@@ -38,7 +38,7 @@ export default function MainNavbar() {
       try {
         const ctrl = new AbortController();
         const id = setTimeout(() => ctrl.abort(), 3000);
-        const r = await fetch(`${getBackendBase()}/api/status/`, { signal: ctrl.signal });
+        const r = await fetch(`${getBackendBase()}/api/status/`, { credentials: 'include', signal: ctrl.signal });
         clearTimeout(id);
         const ok = r.ok && r.status < 500;
         setBackendConnected(ok);
@@ -71,28 +71,31 @@ export default function MainNavbar() {
 
   return (
     <nav className="navbar navbar-expand-lg navbar-dark bg-dark sticky-top floating-navbar">
-      <div className="container-fluid d-flex justify-content-between">
+      <div className="container-fluid">
         <a className="navbar-brand d-flex align-items-center" href="/">
           <span
             className={`backend-dot ${backendConnected === true ? "backend-dot--connected" : backendConnected === false ? "backend-dot--disconnected" : "backend-dot--unknown"}`}
             title={backendConnected === true ? "Django backend connected" : backendConnected === false ? "Django backend not reachable" : "Checking…"}
             aria-label={backendConnected === true ? "Backend connected" : backendConnected === false ? "Backend disconnected" : "Checking connection"}
           />
-          <img src={logo} alt="Logo" height="40" className="me-2" />
-          <span>UOW Tronsoc</span>
+          <img src={logo} alt="Logo" height="40" className="me-2 navbar-logo" />
+          <span className="navbar-brand-text">UOW Tronsoc</span>
         </a>
         <button
           className="navbar-toggler"
           type="button"
           data-bs-toggle="collapse"
           data-bs-target="#mainNav"
+          aria-controls="mainNav"
+          aria-expanded="false"
+          aria-label="Toggle navigation"
         >
           <span className="navbar-toggler-icon" />
         </button>
         <div className="collapse navbar-collapse" id="mainNav">
-          <ul className="navbar-nav ms-auto mb-2 mb-lg-0 align-items-center">
+          <ul className="navbar-nav ms-auto mb-2 mb-lg-0 align-items-lg-center flex-column flex-lg-row">
             {/* Battery status */}
-            <li className="nav-item me-3">
+            <li className="nav-item me-lg-3 mb-2 mb-lg-0">
               <div className="battery-wrapper">
                 <div className="battery">
                   <div
@@ -151,6 +154,9 @@ export default function MainNavbar() {
                 </li>
                 <li>
                   <a className="dropdown-item" href="/checklist/">Checklist</a>
+                </li>
+                <li>
+                  <a className="dropdown-item" href="/automap/">AutoMap</a>
                 </li>
               </ul>
             </li>

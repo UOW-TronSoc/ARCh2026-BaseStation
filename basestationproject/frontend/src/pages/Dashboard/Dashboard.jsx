@@ -376,7 +376,7 @@ export default function Dashboard() {
   /* ---------------------------------------------------------------------------------- */
   return (
     <div className="dashboardPage">
-      <div className="container">
+      <div className="container-fluid px-3">
         {/* ────────────────────── ROW 1 ────────────────────── */}
         <div className="row dashboardRow1 gx-2 gy-1">
           <div className="col-lg-8">

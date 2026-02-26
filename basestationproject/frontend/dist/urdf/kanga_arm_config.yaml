@@ -1,0 +1,5 @@
+/**:
+  ros__parameters:
+    joint_initial_positions: [0.0, -1.57079632679, 2.87979326579, 0.0, 0.0] # [hipAA, hipFE, kneeFE]
+    # joint_initial_positions: [0.0, 0.0, 0.0, 0.0, 0.0] # [hipAA, hipFE, kneeFE]
+    link_lengths: [0.084, 0.45, 0.39, 0.105, 0.21657356] # 26.5

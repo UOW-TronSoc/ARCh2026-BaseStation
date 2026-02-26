@@ -2,10 +2,18 @@ body {
     background-color: #1e1e1e;
   }
   
+.cameraPage {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .main-container {
     background-color: #1e1e1e;
-    min-height: 100vh;
-    padding: 20px;
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: var(--space-md);
 }
 
 /* Sidebar hover effect */

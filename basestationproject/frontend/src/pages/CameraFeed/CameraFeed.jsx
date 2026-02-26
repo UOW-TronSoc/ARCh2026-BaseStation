@@ -97,7 +97,7 @@ const CameraFeed = () => {
 
   // Fetch camera list from API
   useEffect(() => {
-    fetch(`${API_BASE}/cameras/`)
+    fetch(`${API_BASE}/cameras/`, { credentials: 'include' })
       .then((res) => (res.ok ? res.json() : Promise.reject()))
       .then((data) => {
         const list = data.cameras || [];
@@ -139,7 +139,8 @@ const CameraFeed = () => {
     name ? name.charAt(0).toUpperCase() + name.slice(1) : "";
 
   return (
-    <div className="container-fluid mt-4 main-container text-white">
+    <div className="cameraPage">
+      <div className="container-fluid px-3 main-container text-white">
       <h2 className="text-center mb-4">Live Camera Feeds</h2>
 
       <div className="text-center mb-4">
@@ -241,6 +242,7 @@ const CameraFeed = () => {
           </div>
         </div>
       ) : null}
+      </div>
     </div>
   );
 };

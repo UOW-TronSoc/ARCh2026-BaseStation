@@ -53,6 +53,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'backendapi.pin_middleware.PinAuthMiddleware',
     'backendapi.request_logging_middleware.RequestLoggingMiddleware',
 ]
 
@@ -91,9 +92,17 @@ CSRF_TRUSTED_ORIGINS = [
   'http://10.0.0.2',
   'http://10.0.0.2:3000',
   'http://10.0.0.2:8080',
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
 ]
 
 CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_CREDENTIALS = True
+
+# Session cookie: httpOnly (not readable by JS), long expiry
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_AGE = 60 * 60 * 24 * 30  # 30 days
+SESSION_SAVE_EVERY_REQUEST = True
 
 
 # Database
@@ -118,8 +127,8 @@ CACHES = {
 
 
 
-SESSION_ENGINE = "django.contrib.sessions.backends.cache"
-SESSION_CACHE_ALIAS = "default"
+# Use database sessions (no Redis required). Run: python manage.py migrate
+SESSION_ENGINE = "django.contrib.sessions.backends.db"
 
 
 # Password validation

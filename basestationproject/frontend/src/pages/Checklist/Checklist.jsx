@@ -179,7 +179,7 @@ function Checklist() {
   );
 
   return (
-    <div className="container checklist-container mt-4">
+    <div className="container-fluid px-3 checklist-container checklistPage">
       <h2>Day Checklist</h2>
 
       <select

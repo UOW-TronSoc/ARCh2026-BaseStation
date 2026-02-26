@@ -1,7 +1,8 @@
 import React from "react";
 import styles from "./DrivetrainCard.module.css";
 
-const MAX_TWIST = 15;
+/* Must match Dashboard's MAX_TWIST - used for twist scaling and percent display */
+const MAX_TWIST = 20;
 const clampPercent = (value) => {
   const percent = Math.round((value / MAX_TWIST) * 100);
   return Math.max(-100, Math.min(100, percent));

@@ -44,7 +44,7 @@ const ScriptManager = () => {
   const otherNames = allNames.filter((n) => !n.startsWith("Camera "));
 
   return (
-    <div className="container mt-5 text-white">
+    <div className="container-fluid px-3 scriptManagerPage text-white">
       <h1 className="text-center mb-4">Script Manager</h1>
 
       <div className="d-flex justify-content-center mb-4">

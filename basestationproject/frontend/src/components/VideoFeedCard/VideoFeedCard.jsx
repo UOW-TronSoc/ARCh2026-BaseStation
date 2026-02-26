@@ -13,7 +13,7 @@ export default function VideoFeedCard({ api }) {
 
   // Fetch camera list from API on mount
   useEffect(() => {
-    fetch(`${api}/cameras/`)
+    fetch(`${api}/cameras/`, { credentials: 'include' })
       .then((res) => res.ok ? res.json() : Promise.reject())
       .then((data) => {
         const list = data.cameras || [];

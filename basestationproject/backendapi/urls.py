@@ -1,6 +1,7 @@
 from django.urls import path, re_path, include
 from rest_framework.routers import DefaultRouter
 from .views import *
+from .pin_views import auth_status_view, pin_verify_view
 
 router = DefaultRouter()
 router.register(r'groups', ChecklistGroupViewSet)
@@ -10,6 +11,8 @@ router.register(r'tasks', ChecklistTaskViewSet)
 
 urlpatterns = [
     path('status/', status_view, name='status'),
+    path('auth-status/', auth_status_view, name='auth_status'),
+    path('pin-verify/', pin_verify_view, name='pin_verify'),
     path('checklist/', include(router.urls)),
 
     path('video_feed/<str:camera_name>/', get_frame, name='video_feed'),

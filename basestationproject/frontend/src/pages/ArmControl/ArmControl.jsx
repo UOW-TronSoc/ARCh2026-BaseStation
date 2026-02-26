@@ -238,7 +238,7 @@ export default function ArmControl() {
   }, [selectedJoint, jointAngles, jointSpeedOverrides, isLocked, isHorizontal, sendVelocityCommand]);
 
   return (
-    <div className="container my-4">
+    <div className="container-fluid px-3 armPage">
       {/* ROW 1 */}
       <div className="row gx-4">
         <div className="col-lg-8">
