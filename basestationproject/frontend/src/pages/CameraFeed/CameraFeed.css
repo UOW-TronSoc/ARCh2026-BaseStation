@@ -1,63 +1,309 @@
-body {
-    background-color: #1e1e1e;
-  }
-  
 .cameraPage {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  height: 100%;
+}
+
+.main-container {
+  background-color: #1e1e1e;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+}
+
+.cameraPageHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-md);
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.cameraPageHeaderButtons {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.camera3DView {
+  flex: 1;
+  min-height: 400px;
+  border: 2px solid #444;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.cameraLayout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  gap: var(--space-md);
+  align-self: stretch;
+}
+
+.cameraLayout--fullWidth .cameraMain {
+  flex: 1;
+  min-width: 0;
+}
+
+.cameraMain {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.cameraGrid {
+  display: grid;
+  flex: 1;
+  min-height: 200px;
+  gap: var(--space-sm);
+}
+
+.cameraGrid--1 {
+  grid-template-columns: 1fr;
+}
+
+.cameraGrid--2 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.cameraGrid--3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.cameraGrid--4 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.cameraTile {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background-color: #2a2a2a;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.cameraTileHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-xs) var(--space-sm);
+  background-color: rgba(0, 0, 0, 0.3);
+}
+
+.cameraTileName {
+  font-weight: 600;
+}
+
+.cameraTileView {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.cameraImg {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  transition: border-color 0.2s;
+  border: 2px solid #444;
+  border-radius: 4px;
+}
+
+.cameraTileView:hover .cameraImg {
+  border-color: var(--accent, #F8CE4D);
+}
+
+.cameraSidebar {
+  width: 200px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  overflow-y: auto;
+}
+
+.cameraSidebarItem {
+  flex-shrink: 0;
+}
+
+.cameraSidebarThumb {
+  cursor: pointer;
+  overflow: hidden;
+  border-radius: 6px;
+  border: 2px solid #444;
+  transition: border-color 0.2s;
+}
+
+.cameraSidebarThumb:hover {
+  border-color: var(--accent, #F8CE4D);
+}
+
+.cameraSidebarThumb img {
+  width: 100%;
+  height: 100px;
+  object-fit: cover;
+  display: block;
+}
+
+.cameraSidebarItem--draggable {
+  cursor: grab;
+}
+
+.cameraSidebarItem--draggable:active {
+  cursor: grabbing;
+}
+
+/* Grid mode - columns/rows set via inline style from GRID_COLS, GRID_ROWS */
+.cameraGrid3x3 {
+  display: grid;
+  flex: 1;
+  min-height: 0;
+  gap: var(--space-sm);
+}
+
+.cameraGridSlot {
+  min-height: 0;
+  background-color: #2a2a2a;
+  border: 2px dashed #444;
+  border-radius: 8px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
-.main-container {
-    background-color: #1e1e1e;
-    flex: 1;
-    min-height: 0;
-    overflow: auto;
-    padding: var(--space-md);
+.cameraGridSlot--filled {
+  border-style: solid;
 }
 
-/* Sidebar hover effect */
-.small-camera img {
-    transition: transform 0.2s ease;
+.cameraGridSlot:focus-within,
+.cameraGridSlot:hover {
+  border-color: #555;
 }
 
-.small-camera:hover img {
-    transform: scale(1.02);
+.cameraGridSlotContent {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  position: relative;
 }
 
-/* Focused image subtle zoom */
-.focused-camera img {
-    transition: transform 0.2s ease;
+.cameraGridSlotDraggable {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  cursor: grab;
 }
 
-.focused-camera img:hover {
-    transform: scale(1.01);
+.cameraGridSlotDraggable:active {
+  cursor: grabbing;
 }
 
-/* Shared camera frame styling */
-.img-fluid.border.rounded {
-    border: 2px solid #444;
+.cameraGridSlotResizeHandle {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 24px;
+  height: 24px;
+  cursor: nwse-resize;
+  background: linear-gradient(135deg, transparent 50%, rgba(248, 206, 77, 0.6) 50%);
+  border-radius: 4px 0 0 0;
+  flex-shrink: 0;
 }
 
-.img-fluid.border.rounded:hover {
-    border-color: #00aaff;
+.cameraGridSlotResizeHandle:hover {
+  background: linear-gradient(135deg, transparent 50%, rgba(248, 206, 77, 0.9) 50%);
 }
 
-/* Placeholder when no camera is selected */
+.cameraGridSlotHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-xs) var(--space-sm);
+  background-color: rgba(0, 0, 0, 0.3);
+  flex-shrink: 0;
+}
+
+.cameraGridSlotView {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.cameraGridSlotPlaceholder {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #666;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 768px) {
+  .cameraLayout {
+    flex-direction: column;
+  }
+
+  .cameraSidebar {
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .cameraSidebarItem {
+    width: 120px;
+  }
+
+  .cameraSidebarThumb img {
+    height: 80px;
+  }
+
+  .cameraGrid--2,
+  .cameraGrid--3,
+  .cameraGrid--4 {
+    grid-template-columns: 1fr;
+  }
+}
+
 .focus-placeholder {
-    color: #aaa;
-    font-style: italic;
-    padding: 40px;
-    text-align: center;
-    background-color: #2a2a2a;
-    border-radius: 10px;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #888;
+  padding: var(--space-xl);
+  text-align: center;
+  background-color: #2a2a2a;
+  border-radius: 8px;
+  min-height: 200px;
+}
+
+.focus-placeholder p {
+  margin: 0;
 }
 
 .btn-accent-secondary {
   background-color: var(--accent);
   color: #000;
-
 }
+
 .btn-accent-secondary:hover {
   background-color: var(--accent-mode);
   color: #000;
