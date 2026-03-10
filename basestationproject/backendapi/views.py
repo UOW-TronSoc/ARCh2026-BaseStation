@@ -165,96 +165,162 @@ ros_manager = ROS2Manager.get_instance()
 
 # ----------------------------
 
-# Camera Feedback streams
+# Camera Feedback streams (direct from system: RTSP + USB)
 
 # ----------------------------
-# Editable list of camera names. Each name is used as:
-#   - ROS2 topic: /camera/<name>   (e.g. /camera/top, /camera/back)
-#   - API path:   /api/video_feed/<name>/
-CAMERA_TOPICS = [
-    "top",
-    "back",
-    "front"
+# IP cameras: RTSP streams at fixed addresses
+# Use rtsp_transport=tcp for more reliable connections (avoids UDP packet loss)
+IP_CAMERAS = [
+    {"name": "ip_1", "url": "rtsp://10.0.0.5:554/1?rtsp_transport=tcp"},
+    {"name": "ip_2", "url": "rtsp://10.0.0.6:554/1?rtsp_transport=tcp"},
 ]
 
+# USB camera indices to probe when plugged in (e.g. /dev/video0, /dev/video1)
+USB_CAMERA_INDICES = [0, 1, 2]
 
-class MultiCameraSubscriber(Node):
+
+class DirectCameraSource:
     """
-    A ROS2 node that subscribes to a compressed image topic for one camera
-    (by name), decodes incoming JPEG payloads into OpenCV frames, and stores
-    the latest frame safely behind a thread lock.
+    Captures frames directly from the system: either an RTSP stream or a USB device.
+    Runs a background thread to continuously read frames. Thread-safe.
     """
 
-    def __init__(self, camera_name):
+    def __init__(self, name, source, source_type="rtsp"):
         """
-        Initialize the subscriber node.
-
         Args:
-            camera_name (str): Name of the camera (e.g. "top", "back").
-                              Topic subscribed to: /camera/<camera_name>
+            name (str): Display name for this camera.
+            source: For rtsp: URL string. For usb: device index (int).
+            source_type (str): "rtsp" or "usb".
         """
-        super().__init__(f'camera_stream_subscriber_{camera_name}')
-
-        self.camera_name = camera_name
+        self.name = name
+        self.source = source
+        self.source_type = source_type
         self.current_frame = None
+        self.frame_version = 0  # incremented on each new frame (for cache invalidation)
         self.lock = threading.Lock()
+        self._cap = None
+        self._running = False
+        self._thread = None
 
-        topic = f'/camera/{camera_name}'
-        self.create_subscription(
-            CompressedImage,
-            topic,
-            self.image_callback,
-            10
-        )
+    def _open_capture(self):
+        """Open the VideoCapture. Returns True if successful."""
+        try:
+            if self.source_type == "rtsp":
+                self._cap = cv2.VideoCapture(self.source, cv2.CAP_FFMPEG)
+            else:
+                self._cap = cv2.VideoCapture(self.source)
+            if self._cap and self._cap.isOpened():
+                # Reduce buffer to 1 frame for lower latency (especially RTSP)
+                self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                return True
+        except Exception as e:
+            logging.warning(f"Failed to open {self.source_type} source {self.source}: {e}")
+        return False
 
-    def image_callback(self, msg: CompressedImage): 
-        """
-        Callback executed whenever a new CompressedImage message arrives.
-        Decodes the raw JPEG bytes into an OpenCV BGR image and updates
-        self.current_frame under thread lock.
-        
-        Args:
-            msg (CompressedImage): ROS2 message containing JPEG-compressed data.
-        """
-        # Convert ROS2 message byte buffer into a NumPy array
-        arr = np.frombuffer(msg.data, np.uint8)
-        
-        # Decode JPEG bytes to OpenCV BGR image
-        frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-        
-        # If decoding succeeded, update the shared frame safely
-        if frame is not None:
-            with self.lock:
-                self.current_frame = frame
+    def _capture_loop(self):
+        """Background thread: continuously read frames."""
+        while self._running and self._cap and self._cap.isOpened():
+            ret, frame = self._cap.read()
+            if ret and frame is not None:
+                with self.lock:
+                    self.current_frame = frame.copy()
+                    self.frame_version += 1
+            else:
+                # Reconnect on failure (e.g. RTSP drop)
+                self._cap.release()
+                self._cap = None
+                if self._running and self._open_capture():
+                    continue
+                time.sleep(0.5)
+        if self._cap:
+            self._cap.release()
+            self._cap = None
+
+    def start(self):
+        """Start the capture thread."""
+        if self._running:
+            return
+        if not self._open_capture():
+            logging.warning(f"Camera {self.name} could not be opened.")
+            return
+        self._running = True
+        self._thread = threading.Thread(target=self._capture_loop, daemon=True)
+        self._thread.start()
+        logging.info(f"Camera {self.name} ({self.source_type}) started.")
+
+    def stop(self):
+        """Stop the capture thread."""
+        self._running = False
+        if self._thread:
+            self._thread.join(timeout=2.0)
+            self._thread = None
 
 
-# -----------------------------------------------------------------------------
-# Initialize and Register Camera Subscriber Nodes
-# -----------------------------------------------------------------------------
+def _probe_usb_cameras():
+    """Probe for available USB cameras. Returns list of {name, index} for working devices."""
+    found = []
+    for idx in USB_CAMERA_INDICES:
+        cap = cv2.VideoCapture(idx)
+        if cap.isOpened():
+            ret, _ = cap.read()
+            if ret:
+                found.append({"name": f"usb_{idx}", "index": idx})
+        cap.release()
+    return found
+
 
 def initialize_cameras():
     """
-    Create and register MultiCameraSubscriber nodes for each name in CAMERA_TOPICS.
-    Subscribes to /camera/<name> for each name in the list.
-
-    Returns:
-        dict: Mapping from camera_name (str) to its subscriber node instance.
+    Initialize direct camera sources: IP cameras (RTSP) + detected USB cameras.
+    Returns dict mapping camera_name -> DirectCameraSource.
     """
-    camera_nodes = {}
-    for name in CAMERA_TOPICS:
-        camera_node = MultiCameraSubscriber(name)
-        ros_manager.add_node(camera_node)
-        camera_nodes[name] = camera_node
-    logging.info("All camera nodes initialized!")
-    return camera_nodes
+    camera_sources = {}
+
+    # IP cameras (RTSP)
+    for cfg in IP_CAMERAS:
+        src = DirectCameraSource(cfg["name"], cfg["url"], source_type="rtsp")
+        src.start()
+        camera_sources[cfg["name"]] = src
+
+    # USB cameras (direct from system)
+    for cfg in _probe_usb_cameras():
+        src = DirectCameraSource(cfg["name"], cfg["index"], source_type="usb")
+        src.start()
+        camera_sources[cfg["name"]] = src
+
+    logging.info(f"Cameras initialized: {list(camera_sources.keys())}")
+    return camera_sources
 
 
 camera_nodes = initialize_cameras()
 
 
 def get_camera_list(request):
-    """Return the list of camera names (same order as CAMERA_TOPICS)."""
-    return JsonResponse({"cameras": list(CAMERA_TOPICS)})
+    """Return the list of camera names (IP + detected USB)."""
+    return JsonResponse({"cameras": list(camera_nodes.keys())})
+
+
+@require_GET
+def camera_debug(request):
+    """
+    GET /api/camera-debug/
+    Returns status of each camera for debugging RTSP/USB streams:
+    - has_frame: whether a frame has been received
+    - source_type: rtsp or usb
+    - source: URL or device index
+    """
+    status = {}
+    for name, src in camera_nodes.items():
+        with src.lock:
+            has_frame = src.current_frame is not None
+            frame_shape = list(src.current_frame.shape) if has_frame else None
+        status[name] = {
+            "has_frame": has_frame,
+            "frame_shape": frame_shape,
+            "source_type": src.source_type,
+            "source": str(src.source) if src.source_type == "rtsp" else src.source,
+        }
+    return JsonResponse({"cameras": status})
 
 
 # -----------------------------------------------------------------------------
@@ -310,68 +376,151 @@ def get_frame(request, camera_name):
 # -----------------------------------------------------------------------------
 # Continuous MJPEG Streaming View
 # -----------------------------------------------------------------------------
-@gzip.gzip_page  # Optional gzip compression for the multipart stream
 def mjpeg_stream(request, camera_name):
     """
     HTTP endpoint that streams an MJPEG (multipart/x-mixed-replace) response
     for a given camera, pushing new frames as they arrive.
-
-    Args:
-        request (HttpRequest): Django request object.
-        camera_name (str): Name of the camera (e.g. "top", "back").
-
-    Returns:
-        StreamingHttpResponse: Keeps connection open, sending frames until
-        client disconnects.
+    Use ?single=1 to get one JPEG frame (avoids streaming issues).
     """
     if camera_name not in camera_nodes:
         return HttpResponse(status=404)
+    node = camera_nodes[camera_name]
+
+    # Single-frame mode: return one JPEG with compression (smaller = faster)
+    if request.GET.get("single"):
+        try:
+            quality = min(95, max(30, int(request.GET.get("q", _DEFAULT_JPEG_QUALITY))))
+        except (ValueError, TypeError):
+            quality = _DEFAULT_JPEG_QUALITY
+        try:
+            max_width = min(1920, max(160, int(request.GET.get("w", _DEFAULT_MAX_WIDTH))))
+        except (ValueError, TypeError):
+            max_width = _DEFAULT_MAX_WIDTH
+        with node.lock:
+            frame = node.current_frame.copy() if node.current_frame is not None else None
+            frame_version = node.frame_version
+        # Cache hit: same frame, same params → return cached JPEG (avoids 25 req/s encode)
+        cached = _frame_cache.get(camera_name)
+        if frame is None:
+            _frame_cache.pop(camera_name, None)  # invalidate when no signal
+            jpeg_bytes = _get_no_signal_jpeg()
+        elif cached and cached[0] == frame_version and cached[2] == quality and cached[3] == max_width:
+            jpeg_bytes = cached[1]
+        else:
+            jpeg_bytes = _compress_frame(frame, quality=quality, max_width=max_width)
+            if jpeg_bytes is None:
+                jpeg_bytes = _get_no_signal_jpeg()
+            else:
+                _frame_cache[camera_name] = (frame_version, jpeg_bytes, quality, max_width)
+        r = HttpResponse(jpeg_bytes, content_type="image/jpeg")
+        r['Cache-Control'] = 'no-cache'
+        return r
+
     boundary = "--frame"
     response = StreamingHttpResponse(
-        _frame_generator(camera_nodes[camera_name], boundary),
+        _frame_generator(node, boundary),
         content_type=f'multipart/x-mixed-replace; boundary={boundary}'
     )
-    
-    # Prevent caching and ensure the client/proxy closes the socket on exit
     response['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-    response['Pragma']        = 'no-cache'
-    response['Expires']       = '0'
-    response['Connection']    = 'close'
-    
+    response['Pragma'] = 'no-cache'
+    response['Expires'] = '0'
+    response['Connection'] = 'close'
     return response
+
+
+# Compression defaults for single-frame mode (smaller = faster transfer)
+_DEFAULT_JPEG_QUALITY = 65
+_DEFAULT_MAX_WIDTH = 640
+
+# Per-camera cache: camera_name -> (frame_version, jpeg_bytes, quality, max_width)
+# Avoids re-encoding the same frame 25x/sec when client polls at 25 fps
+_frame_cache = {}
+
+
+def _compress_frame(frame, quality=_DEFAULT_JPEG_QUALITY, max_width=_DEFAULT_MAX_WIDTH):
+    """
+    Downscale and encode frame for faster transfer.
+    Returns JPEG bytes or None on failure.
+    """
+    if frame is None:
+        return None
+    try:
+        h, w = frame.shape[:2]
+        if w > max_width:
+            scale = max_width / w
+            new_w = max_width
+            new_h = int(h * scale)
+            frame = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
+        success, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
+        if not success or jpeg is None:
+            return None
+        return jpeg.tobytes()
+    except Exception:
+        return None
+
+
+# Minimal "no signal" placeholder: small gray frame for when camera is unreachable
+_NO_SIGNAL_JPEG = None
+
+def _get_no_signal_jpeg():
+    global _NO_SIGNAL_JPEG
+    if _NO_SIGNAL_JPEG is None:
+        gray = np.zeros((90, 160, 3), dtype=np.uint8)
+        gray[:] = (48, 48, 48)
+        _, jpeg = cv2.imencode('.jpg', gray, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        _NO_SIGNAL_JPEG = jpeg.tobytes()
+    return _NO_SIGNAL_JPEG
 
 
 def _frame_generator(camera_node, boundary):
     """
     MJPEG generator that yields *every* new frame immediately.
+    When camera has no frames (e.g. RTSP unreachable), sends a placeholder every 2s.
     """
     last_ts = 0.0
+    last_placeholder_ts = 0.0
     try:
         while True:
-            # grab the frame under lock
-            with camera_node.lock:
-                frame = camera_node.current_frame
+            try:
+                # grab the frame under lock
+                with camera_node.lock:
+                    frame = camera_node.current_frame
 
-            if frame is None:
-                # nothing yet—briefly wait
-                time.sleep(0.01)
+                if frame is None:
+                    # Camera unreachable—send placeholder every 2s so client gets something
+                    now = time.time()
+                    if now - last_placeholder_ts >= 2.0:
+                        jpeg_bytes = _get_no_signal_jpeg()
+                        yield (
+                            f"{boundary}\r\n"
+                            "Content-Type: image/jpeg\r\n\r\n"
+                        ).encode('utf-8') + jpeg_bytes + b"\r\n"
+                        last_placeholder_ts = now
+                    time.sleep(0.01)
+                    continue
+
+                # encode with slightly lower quality for faster streaming (85 vs default 95)
+                success, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                if not success or jpeg is None:
+                    continue
+
+                # yield boundary + JPEG
+                yield (
+                    f"{boundary}\r\n"
+                    "Content-Type: image/jpeg\r\n\r\n"
+                ).encode('utf-8') + jpeg.tobytes() + b"\r\n"
+
+                # reset last_ts so we don't wait for frame-rate
+                last_ts = time.time()
+
+            except (BrokenPipeError, ConnectionResetError, GeneratorExit):
+                # client closed—exit quietly
+                return
+            except Exception as e:
+                # Log but don't crash—avoids 500 when frame is corrupted or cv2 fails
+                logging.debug("MJPEG frame encode error: %s", e)
+                time.sleep(0.05)
                 continue
-
-            # we can encode and yield immediately
-            success, jpeg = cv2.imencode('.jpg', frame)
-            if not success:
-                continue
-
-            # yield boundary + JPEG
-            yield (
-                f"{boundary}\r\n"
-                "Content-Type: image/jpeg\r\n\r\n"
-            ).encode('utf-8') + jpeg.tobytes() + b"\r\n"
-
-            # reset last_ts so we don't wait for frame-rate
-            last_ts = time.time()
-
-            # and loop right back to check for the next new frame
     except (BrokenPipeError, ConnectionResetError, GeneratorExit):
         # client closed—exit quietly
         return

@@ -15,8 +15,9 @@ urlpatterns = [
     path('pin-verify/', pin_verify_view, name='pin_verify'),
     path('checklist/', include(router.urls)),
 
-    path('video_feed/<str:camera_name>/', get_frame, name='video_feed'),
+    path('video_feed/<str:camera_name>/', mjpeg_stream, name='video_feed'),
     path('cameras/', get_camera_list, name='camera_list'),
+    path('camera-debug/', camera_debug, name='camera_debug'),
     path('link-latency/', link_latency, name='link_latency'),
 
     # path('drivetrain-feedback/', get_drivetrain_feedback, name='drivetrain-feedback'),

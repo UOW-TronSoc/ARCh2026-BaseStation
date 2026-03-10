@@ -7,6 +7,7 @@ import DataDisplayCard from "components/DataDisplayCard/DataDisplayCard";
 import DrivetrainCard from "components/DrivetrainCard/DrivetrainCard";
 import SpeedControlCard from "components/SpeedControlCard/SpeedControlCard";
 import { getApiBase, getCommandUrl } from "../../config";
+import { useBattery } from "context/BatteryContext";
 
 const EPSILON = 0.01;
 const MAX_TWIST = 20; // absolute range for linear/Angular components
@@ -54,23 +55,7 @@ export default function Dashboard() {
     roll: 0,
   });
 
-  const [batteryInfo, setBatteryInfo] = useState({
-    charge_pct: 0,
-    current_draw: 0,
-    temperature: 0,
-    timestamp: 0,
-    temperature_max: 0,
-    temperature_min: 0,
-    temps: [],
-    total_voltage: 0,
-    measured_voltage: 0,
-    capacity: 0,
-    cell_voltages: [],
-    cell_voltages_v: [],
-    charge_state: 0,
-    fault_bits: [],
-    source_timestamp: null,
-  });
+  const batteryInfo = useBattery();
 
   const [linkLatencyMs, setLinkLatencyMs] = useState(null);
   const [linkClientIp, setLinkClientIp] = useState(null);
@@ -127,34 +112,8 @@ export default function Dashboard() {
   }, []);
 
   /* ------------------------------------------------------------------ */
-  /*  REST fetchers (battery, link-latency) — core-feedback off          */
+  /*  REST fetchers (link-latency) — battery via BatteryContext         */
   /* ------------------------------------------------------------------ */
-  const fetchBattery = async () => {
-    try {
-      const { data } = await axios.get(`${getApiBase()}/battery-feedback/`);
-      setBatteryInfo({
-        charge_pct: data.charge_pct ?? 0,
-        current_draw: data.current_draw ?? 0,
-        temperature: data.temperature ?? 0,
-        timestamp: data.timestamp ?? 0,
-        temperature_max: data.temperature_max ?? data.temperature ?? 0,
-        temperature_min: data.temperature_min ?? data.temperature ?? 0,
-        temps: data.temps ?? [],
-        total_voltage: data.total_voltage ?? 0,
-        measured_voltage: data.measured_voltage ?? 0,
-        capacity: data.capacity ?? 0,
-        cell_voltages: data.cell_voltages ?? [],
-        cell_voltages_v: data.cell_voltages_v ?? [],
-        charge_state: data.charge_state ?? 0,
-        fault_bits: data.fault_bits ?? [],
-        source_timestamp: data.source_timestamp ?? null,
-      });
-    } catch (err) {
-      console.error("Failed to fetch battery status:", err.message);
-    }
-  };
-
-
   const fetchLinkLatency = async () => {
     try {
       const t0 = performance.now();
@@ -169,7 +128,7 @@ export default function Dashboard() {
     }
   };
 
-  const refresh_rate = 500; //ms
+  const LINK_LATENCY_MS = 3000;   // ~0.33 Hz — antenna RTT (when enabled)
 
   useEffect(() => {
     speedRef.current = speed;
@@ -207,20 +166,12 @@ export default function Dashboard() {
     };
   }, [recalcKeyboardTwist]);
 
-  /* Poll every refresh_rate ms */
-  useEffect(() => {
-    fetchBattery();
-    fetchLinkLatency();
-    const timer = setInterval(() => {
-      fetchBattery();
-    }, refresh_rate);
-    return () => clearInterval(timer);
-  }, []);
+  /* Battery: shared via BatteryContext (single poll for navbar + dashboard) */
 
-  /* Link latency (antenna RTT) every 2 s */
+  /* Link latency (antenna RTT): ~0.33 Hz */
   useEffect(() => {
     fetchLinkLatency();
-    const latencyTimer = setInterval(fetchLinkLatency, 2000);
+    const latencyTimer = setInterval(fetchLinkLatency, LINK_LATENCY_MS);
     return () => clearInterval(latencyTimer);
   }, []);
 

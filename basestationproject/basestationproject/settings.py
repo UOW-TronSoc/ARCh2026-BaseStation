@@ -96,7 +96,27 @@ CSRF_TRUSTED_ORIGINS = [
   'http://127.0.0.1:5173',
 ]
 
-CORS_ALLOW_ALL_ORIGINS = True
+# When credentials are included, Access-Control-Allow-Origin cannot be '*'.
+# Use explicit origins instead of CORS_ALLOW_ALL_ORIGINS.
+CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:8000",
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
+    "http://django_server:8000",
+    "http://10.0.0.1",
+    "http://10.0.0.1:8000",
+    "http://10.0.0.1:8080",
+    "http://10.0.0.1:5173",
+    "http://10.0.0.2",
+    "http://10.0.0.2:3000",
+    "http://10.0.0.2:8080",
+    "http://10.0.0.2:5173",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
 CORS_ALLOW_CREDENTIALS = True
 
 # Session cookie: httpOnly (not readable by JS), long expiry

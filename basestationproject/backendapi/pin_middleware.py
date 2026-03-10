@@ -6,7 +6,15 @@ import logging
 from django.http import JsonResponse
 
 logger = logging.getLogger(__name__)
-EXEMPT_PREFIXES = ("/api/pin-verify/", "/api/auth-status/", "/api/status/")
+# video_feed and cameras exempt: <img> tags don't send cookies cross-origin
+EXEMPT_PREFIXES = (
+    "/api/pin-verify/",
+    "/api/auth-status/",
+    "/api/status/",
+    "/api/video_feed/",
+    "/api/cameras/",
+    "/api/camera-debug/",
+)
 
 
 def _is_exempt(path: str) -> bool:

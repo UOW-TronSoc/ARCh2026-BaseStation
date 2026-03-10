@@ -10,35 +10,28 @@ import { getApiBase } from "../../config";
 const API_BASE = import.meta.env.VITE_API_URL || getApiBase();
 
 /**
- * Hook that polls MJPEG URLs and updates THREE.Textures.
- * @param {string[]} cameraNames - List of camera names (e.g. ["top", "back", "front", "left"])
+ * Hook that binds MJPEG stream URLs to THREE.Textures.
+ * Uses native MJPEG streaming (one connection per camera, browser updates image continuously).
  */
-function useMJPEGTextures(cameraNames, fps = 10) {
+function useMJPEGTextures(cameraNames) {
   const texturesRef = useRef([]);
 
   useEffect(() => {
     if (!cameraNames.length) return;
-    const intervals = cameraNames.map((name, i) => {
+    cameraNames.forEach((name, i) => {
       const img = new Image();
       img.crossOrigin = "Anonymous";
       const tex = new THREE.Texture(img);
       tex.minFilter = THREE.LinearFilter;
       tex.magFilter = THREE.LinearFilter;
       texturesRef.current[i] = tex;
-
-      const url = `${API_BASE}/video_feed/${encodeURIComponent(name)}/`;
-      const update = () => {
-        img.src = `${url}?t=${Date.now()}`;
-      };
-
-      update();
-      return setInterval(update, 1000 / fps);
+      img.src = `${API_BASE}/video_feed/${encodeURIComponent(name)}/`;
     });
+    return () => {
+      texturesRef.current.forEach((tex) => tex?.image && (tex.image.src = ""));
+    };
+  }, [cameraNames.join(",")]);
 
-    return () => intervals.forEach((i) => clearInterval(i));
-  }, [cameraNames.join(","), fps]);
-
-  // on each render frame, mark textures needing update
   useFrame(() => {
     texturesRef.current.forEach((tex) => {
       if (tex && tex.image && tex.image.complete) {
@@ -56,7 +49,7 @@ function useMJPEGTextures(cameraNames, fps = 10) {
  */
 function CamerasRing({ cameraNames }) {
   const ringCameras = cameraNames.slice(0, 4);
-  const textures = useMJPEGTextures(ringCameras, 10);
+  const textures = useMJPEGTextures(ringCameras);
 
   return (
     <group>
@@ -161,22 +154,30 @@ const CameraFeed = () => {
       .catch(() => setCameras([]));
   }, []);
 
-  // 2D polling for sidebar & focused images (JPEG frames)
+  // 2D: onLoad-driven chain (like IP camera admin)—request next frame when current loads
+  const makeFrameUrl = (cameraName, t) =>
+    `${API_BASE}/video_feed/${encodeURIComponent(cameraName)}/?single=1&t=${t}`;
   useEffect(() => {
     if (!cameras.length) return;
-    const intervals = activeCameras.map((on, idx) => {
-      if (!on) return null;
-      const name = cameras[idx];
-      return setInterval(() => {
-        setImageSrcs((prev) => {
-          const next = [...prev];
-          next[idx] = `${API_BASE}/video_feed/${encodeURIComponent(name)}/?t=${Date.now()}`;
-          return next;
-        });
-      }, 1000 / 15); // ~15 FPS
-    });
-    return () => intervals.forEach((i) => i != null && clearInterval(i));
+    setImageSrcs(
+      cameras.map((name, idx) =>
+        activeCameras[idx] ? makeFrameUrl(name, Date.now()) : ""
+      )
+    );
   }, [cameras, activeCameras]);
+
+  const requestNextFrame = (cameraId) => {
+    if (!activeCameras[cameraId] || !cameras[cameraId]) return;
+    setImageSrcs((prev) => {
+      const next = [...prev];
+      next[cameraId] = makeFrameUrl(cameras[cameraId], Date.now());
+      return next;
+    });
+  };
+
+  const onFrameError = (cameraId) => {
+    requestNextFrame(cameraId);
+  };
 
   const toggleCamera = (i) => {
     const isTurningOff = activeCameras[i];
@@ -193,8 +194,35 @@ const CameraFeed = () => {
     .map((_, i) => i)
     .filter((i) => !focusedCameras.includes(i));
 
-  const displayName = (name) =>
-    name ? name.charAt(0).toUpperCase() + name.slice(1) : "";
+  const displayName = (name) => {
+    if (!name) return "";
+    // Friendly labels for IP and USB cameras
+    const ipMatch = name.match(/^ip_(\d+)$/);
+    if (ipMatch) return `IP Camera ${ipMatch[1]}`;
+    const usbMatch = name.match(/^usb_(\d+)$/);
+    if (usbMatch) return `USB Camera ${parseInt(usbMatch[1]) + 1}`;
+    return name.charAt(0).toUpperCase() + name.slice(1);
+  };
+
+  // Realtime FPS logging + onLoad-driven next frame (like IP camera admin)
+  const fpsRef = useRef({});
+  const onFrameLoad = (cameraId) => {
+    const name = cameras[cameraId];
+    const now = performance.now();
+    const track = fpsRef.current[cameraId] ?? { lastTs: 0, deltas: [], logTs: 0 };
+    if (track.lastTs > 0) {
+      track.deltas.push(1000 / (now - track.lastTs));
+      if (track.deltas.length > 10) track.deltas.shift();
+      const fps = track.deltas.reduce((a, b) => a + b, 0) / track.deltas.length;
+      if (now - track.logTs >= 1000) {
+        console.log(`[CameraFeed] ${displayName(name)} FPS: ${fps.toFixed(1)}`);
+        track.logTs = now;
+      }
+    }
+    track.lastTs = now;
+    fpsRef.current[cameraId] = track;
+    requestNextFrame(cameraId);
+  };
 
   const handleDragStart = (e, cameraIndex) => {
     e.dataTransfer.setData("cameraIndex", String(cameraIndex));
@@ -368,9 +396,11 @@ const CameraFeed = () => {
                             {activeCameras[cameraIndex] && (
                               <div className="cameraGridSlotView">
                                 <img
-                                  src={imageSrcs[cameraIndex]}
+                                  src={imageSrcs[cameraIndex] || undefined}
                                   alt={displayName(cameras[cameraIndex])}
                                   className="cameraImg"
+                                  onLoad={() => onFrameLoad(cameraIndex)}
+                                  onError={() => onFrameError(cameraIndex)}
                                 />
                               </div>
                             )}
@@ -405,9 +435,11 @@ const CameraFeed = () => {
                     {activeCameras[id] && (
                       <div className="cameraTileView" onClick={() => toggleFocus(id)}>
                         <img
-                          src={imageSrcs[id]}
+                          src={imageSrcs[id] || undefined}
                           alt={displayName(cameras[id])}
                           className="cameraImg"
+                          onLoad={() => onFrameLoad(id)}
+                          onError={() => onFrameError(id)}
                         />
                       </div>
                     )}
@@ -442,7 +474,7 @@ const CameraFeed = () => {
                         draggable={gridMode}
                         onDragStart={gridMode ? (e) => handleDragStart(e, id) : undefined}
                       >
-                        <img src={imageSrcs[id]} alt={displayName(cameras[id])} />
+                        <img src={imageSrcs[id] || undefined} alt={displayName(cameras[id])} onLoad={() => onFrameLoad(id)} onError={() => onFrameError(id)} />
                       </div>
                     )}
                   </div>
@@ -457,4 +489,3 @@ const CameraFeed = () => {
 };
 
 export default CameraFeed;
-CameraFeed;

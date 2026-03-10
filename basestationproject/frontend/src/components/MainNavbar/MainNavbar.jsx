@@ -1,37 +1,12 @@
 import React, { useState, useEffect } from "react";
-import axios from "axios";
 import logo from "assets/logo.png";
 import './MainNavbar.css';
 import { getBackendBase } from "../../config";
+import { useBattery } from "context/BatteryContext";
 
 export default function MainNavbar() {
-  const API = `${getBackendBase()}/api`;
   const [backendConnected, setBackendConnected] = useState(null);
-  const [batteryInfo, setBatteryInfo] = useState({
-    charge_pct: 0,
-    current_draw: 0,
-    temperature: 0,
-    temperature_max: 0,
-    charge_state: 0,
-    fault_bits: [],
-  });
-  
-
-  const fetchBattery = async () => {
-    try {
-      const { data } = await axios.get(`${API}/battery-feedback`);
-      setBatteryInfo({
-        charge_pct: data.charge_pct ?? 0,
-        current_draw: data.current_draw ?? 0,
-        temperature: data.temperature ?? 0,
-        temperature_max: data.temperature_max ?? data.temperature ?? 0,
-        charge_state: data.charge_state ?? 0,
-        fault_bits: data.fault_bits ?? [],
-      });
-    } catch (err) {
-      console.error("Failed to fetch battery:", err);
-    }
-  };
+  const batteryInfo = useBattery();
 
   useEffect(() => {
     const checkBackend = async () => {
@@ -48,12 +23,6 @@ export default function MainNavbar() {
     };
     checkBackend();
     const timer = setInterval(checkBackend, 5000);
-    return () => clearInterval(timer);
-  }, []);
-
-  useEffect(() => {
-    fetchBattery();
-    const timer = setInterval(fetchBattery, 2000);
     return () => clearInterval(timer);
   }, []);
 

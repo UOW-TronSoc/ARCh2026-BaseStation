@@ -1,5 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import { AuthProvider } from 'context/AuthContext';
+import { BatteryProvider } from 'context/BatteryContext';
 import ProtectedRoute from 'components/ProtectedRoute/ProtectedRoute';
 import MainNavbar from 'components/MainNavbar/MainNavbar';
 import PinPage from 'pages/PinPage/PinPage';
@@ -44,9 +45,11 @@ function AppContent() {
 export default function App() {
   return (
     <AuthProvider>
-      <Router>
-        <AppContent />
-      </Router>
+      <BatteryProvider>
+        <Router>
+          <AppContent />
+        </Router>
+      </BatteryProvider>
     </AuthProvider>
   );
 }

@@ -1,15 +1,16 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback, memo } from "react";
 import styles from "./VideoFeedCard.module.css";
 import "bootstrap/dist/js/bootstrap.bundle.min.js";
 
-export default function VideoFeedCard({ api }) {
+const makeFrameUrl = (api, cameraName, t) =>
+  `${api}/video_feed/${encodeURIComponent(cameraName)}/?single=1&t=${t}`;
+
+const VideoFeedCard = ({ api }) => {
   const [cameras, setCameras] = useState([]);
   const [selectedCamera, setSelectedCamera] = useState("");
-  const [imageSrc, setImageSrc] = useState("");
   const [live, setLive] = useState(false);
   const [feedEnabled, setFeedEnabled] = useState(false);
-
-  const intervalRef = useRef(null);
+  const [displaySrc, setDisplaySrc] = useState("");
 
   // Fetch camera list from API on mount
   useEffect(() => {
@@ -32,24 +33,48 @@ export default function VideoFeedCard({ api }) {
     }
   }, [cameras, selectedCamera]);
 
-  // Update image src directly (no fetch). Same approach as CameraFeed: one request per frame
-  // so the browser streams the MJPEG frame. Using fetch() here doubled requests and added latency.
+  // onLoad-driven chain: request next frame only when current loads (avoids aborting requests)
+  const requestNextFrame = useCallback(() => {
+    if (feedEnabled && selectedCamera) {
+      setDisplaySrc(makeFrameUrl(api, selectedCamera, Date.now()));
+    }
+  }, [api, selectedCamera, feedEnabled]);
+
   useEffect(() => {
     if (feedEnabled && selectedCamera) {
       setLive(true);
-      intervalRef.current = setInterval(() => {
-        setImageSrc(
-          `${api}/video_feed/${encodeURIComponent(selectedCamera)}/?time=${Date.now()}`
-        );
-      }, 1000 / 15); // ~15 FPS to match CameraFeed and reduce load when multiple cards are shown
+      setDisplaySrc(makeFrameUrl(api, selectedCamera, Date.now()));
     } else {
       setLive(false);
-      setImageSrc("");
-      clearInterval(intervalRef.current);
+      setDisplaySrc("");
     }
-
-    return () => clearInterval(intervalRef.current);
   }, [api, selectedCamera, feedEnabled]);
+
+  // Realtime FPS logging
+  const fpsRef = useRef({ lastTs: 0, deltas: [], logTs: 0 });
+  useEffect(() => {
+    if (!feedEnabled) fpsRef.current = { lastTs: 0, deltas: [], logTs: 0 };
+  }, [feedEnabled]);
+
+  const onFrameLoad = useCallback(() => {
+    const now = performance.now();
+    const { lastTs, deltas, logTs } = fpsRef.current;
+    if (lastTs > 0) {
+      deltas.push(1000 / (now - lastTs));
+      if (deltas.length > 10) deltas.shift();
+      const fps = deltas.reduce((a, b) => a + b, 0) / deltas.length;
+      if (now - logTs >= 1000) {
+        console.log(`[VideoFeedCard] ${selectedCamera} FPS: ${fps.toFixed(1)}`);
+        fpsRef.current.logTs = now;
+      }
+    }
+    fpsRef.current.lastTs = now;
+    requestNextFrame();
+  }, [selectedCamera, requestNextFrame]);
+
+  const onFrameError = useCallback(() => {
+    requestNextFrame();
+  }, [requestNextFrame]);
 
   return (
     <div className={`card bg-transparent rounded-3 p-0`}>
@@ -57,10 +82,12 @@ export default function VideoFeedCard({ api }) {
         {/* Video */}
         <div className="ratio ratio-16x9 overflow-hidden rounded-3">
           <img
-            src={feedEnabled ? imageSrc : ""}
+            src={displaySrc || undefined}
             alt="Live Camera Feed"
             className="w-100 h-100"
             style={{ objectFit: "cover" }}
+            onLoad={feedEnabled ? onFrameLoad : undefined}
+            onError={feedEnabled ? onFrameError : undefined}
           />
         </div>
 
@@ -111,4 +138,6 @@ export default function VideoFeedCard({ api }) {
       </div>
     </div>
   );
-}
+};
+
+export default memo(VideoFeedCard);
