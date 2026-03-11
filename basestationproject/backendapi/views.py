@@ -756,7 +756,7 @@ class ScienceCANPublisher(Node):
         with self._lock:
             drill = data.get("drill", self._state["drill"])
             linact = data.get("linear_actuator", self._state["linear_actuator"])
-            self._state["drill"] = drill if drill in ("up", "down", "stopped") else "stopped"
+            self._state["drill"] = drill if drill in ("left", "right", "stopped") else "stopped"
             self._state["linear_actuator"] = linact if linact in ("up", "down", "stopped") else "stopped"
             self._state["heating_on"] = data.get("heating_on", self._state["heating_on"])
             self._state["cooling_on"] = data.get("cooling_on", self._state["cooling_on"])
@@ -773,7 +773,7 @@ class ScienceCANPublisher(Node):
             msg.is_extended = False
             msg.is_rtr = False
             msg.is_error = False
-            drill_map = {"stopped": 0, "up": 1, "down": 2}
+            drill_map = {"stopped": 0, "left": 1, "right": 2}
             linact_map = {"stopped": 0, "up": 1, "down": 2}
             msg.data = [
                 drill_map.get(self._state["drill"], 0),

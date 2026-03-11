@@ -98,24 +98,24 @@ export default function Science() {
             <div className="Science-btn-group">
               <button
                 className="btn btn-outline-primary"
-                onClick={handleDrill("up")}
+                onClick={handleDrill("left")}
                 disabled={controlPending}
               >
-                Up
+                Left
               </button>
               <button
                 className="btn btn-outline-warning"
-                onClick={handleDrill("stop")}
+                onClick={handleDrill("stopped")}
                 disabled={controlPending}
               >
                 Stop
               </button>
               <button
                 className="btn btn-outline-primary"
-                onClick={handleDrill("down")}
+                onClick={handleDrill("right")}
                 disabled={controlPending}
               >
-                Down
+                Right
               </button>
             </div>
             <small className="text-muted">State: {feedback.drill_state}</small>
