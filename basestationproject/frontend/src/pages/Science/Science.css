@@ -1,0 +1,202 @@
+.Science {
+  padding: var(--space-lg);
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.Science-title {
+  color: var(--card-alt-fg);
+  margin-bottom: var(--space-xl);
+  font-size: 1.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.Science-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: auto auto auto;
+  gap: var(--space-md);
+  grid-template-areas:
+    "camera drill"
+    "camera linear"
+    "temps heating"
+    "ultrasonic current"
+    "nir servo"
+    "spec spec";
+}
+
+/* Camera: top-left, spans 2 rows */
+.Science-card-camera {
+  grid-area: camera;
+  min-height: 280px;
+}
+
+/* Explicit grid areas for controls */
+.Science-card:nth-child(2) {
+  grid-area: drill;
+}
+.Science-card:nth-child(3) {
+  grid-area: linear;
+}
+.Science-card:nth-child(4) {
+  grid-area: temps;
+}
+.Science-card:nth-child(5) {
+  grid-area: heating;
+}
+.Science-card:nth-child(6) {
+  grid-area: ultrasonic;
+}
+.Science-card:nth-child(7) {
+  grid-area: current;
+}
+.Science-card:nth-child(8) {
+  grid-area: nir;
+}
+.Science-card:nth-child(9) {
+  grid-area: servo;
+}
+.Science-card-spec {
+  grid-area: spec;
+}
+
+.Science-card {
+  background: var(--card-alt-bg);
+  color: var(--card-alt-fg);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.Science-card:hover {
+  border-color: rgba(248, 206, 77, 0.2);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.Science-card-header {
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--accent);
+  font-weight: 600;
+  padding: var(--space-sm) var(--space-md);
+  font-size: 0.95rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.Science-card-camera .Science-card-header {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.Science-btn-group {
+  display: flex;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
+}
+
+.Science-btn-group .btn {
+  flex: 1;
+}
+
+.Science-temps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.Science-temp-badge {
+  background: rgba(255, 255, 255, 0.08);
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.Science-toggles {
+  display: flex;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.Science-value {
+  font-size: 1.15rem;
+  font-weight: 500;
+  color: var(--card-alt-fg);
+}
+
+.Science-servo-slider {
+  width: 100%;
+  margin-bottom: var(--space-sm);
+}
+
+.Science-spec-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: var(--space-sm);
+  font-size: 0.85rem;
+}
+
+.Science-spec-item {
+  padding: var(--space-sm);
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+/* Larger screens: 3-column layout with camera left */
+@media (min-width: 992px) {
+  .Science-grid {
+    grid-template-columns: 1.2fr 1fr 1fr;
+    grid-template-areas:
+      "camera drill linear"
+      "camera temps heating"
+      "camera ultrasonic current"
+      "camera nir servo"
+      "spec spec spec";
+  }
+
+  .Science-card-camera {
+    min-height: 400px;
+  }
+
+  .Science-spec-grid {
+    grid-template-columns: repeat(9, 1fr);
+  }
+}
+
+@media (min-width: 1200px) {
+  .Science-spec-grid {
+    grid-template-columns: repeat(18, 1fr);
+  }
+}
+
+/* Smaller screens: stack vertically, camera first */
+@media (max-width: 767px) {
+  .Science-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: unset;
+    grid-template-areas: unset;
+    grid-auto-rows: auto;
+  }
+
+  .Science-card:nth-child(1),
+  .Science-card:nth-child(2),
+  .Science-card:nth-child(3),
+  .Science-card:nth-child(4),
+  .Science-card:nth-child(5),
+  .Science-card:nth-child(6),
+  .Science-card:nth-child(7),
+  .Science-card:nth-child(8),
+  .Science-card:nth-child(9),
+  .Science-card:nth-child(10) {
+    grid-area: unset;
+  }
+
+  .Science-card-camera {
+    min-height: 240px;
+  }
+
+  .Science-spec-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}

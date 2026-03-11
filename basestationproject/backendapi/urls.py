@@ -23,8 +23,8 @@ urlpatterns = [
     # path('drivetrain-feedback/', get_drivetrain_feedback, name='drivetrain-feedback'),
     # path('core-feedback/', get_core_feedback, name='core-feedback'),
 
-    # path('science-feedback/', get_science_feedback, name='science-feedback'),
-    # path('science-control/', set_science_control, name='science-control'),
+    path('science-feedback/', get_science_feedback, name='science-feedback'),
+    path('science-control/', set_science_control, name='science-control'),
 
     # path('logs/', get_rover_logs, name='get_rover_logs'),
 

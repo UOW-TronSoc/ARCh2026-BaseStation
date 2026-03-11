@@ -33,11 +33,19 @@ try:
         BatteryInfo,
         # RoverLog,
     )
+    try:
+        from can_msgs.msg import Frame as CanFrame
+        CAN_MSGS_AVAILABLE = True
+    except ImportError:
+        CanFrame = None
+        CAN_MSGS_AVAILABLE = False
 
     ROS_IMPORTS_AVAILABLE = True
 
 except ImportError as e:
     ROS_IMPORTS_AVAILABLE = False
+    CAN_MSGS_AVAILABLE = False
+    CanFrame = None
     logging.warning(f"ROS message imports failed: {e}. Some features may not work.")
 
 
@@ -644,10 +652,197 @@ ros_manager.add_node(feedback_node)
 
 # ----------------------------
 
-# Science Control (commented out for now)
+# Science CAN Subscriber / Publisher (CAN/can1/receive, CAN/can1/transmit)
 
 # ----------------------------
-# class ScienceFeedbackSubscriber(Node):
+# CAN protocol: 0x100 temps, 0x101 ultrasonic, 0x102 current, 0x103-0x10B spectrophotometer
+# Control TX: 0x200 (drill, linear_actuator, heating, cooling, nir, servo)
+import struct
+
+SCIENCE_CAN_RX_TOPIC = "CAN/can1/receive"
+SCIENCE_CAN_TX_TOPIC = "CAN/can1/transmit"
+
+
+def _default_science_feedback():
+    """Mock data when no CAN frames received."""
+    return {
+        "temperatures": [22.1, 23.5, 24.0],
+        "ultrasonic_cm": 45.2,
+        "current_amps": 0.35,
+        "spectrophotometer": [0.1 + 0.05 * i for i in range(18)],
+        "heating_on": False,
+        "cooling_on": False,
+        "nir_on": False,
+        "drill_state": "stopped",
+        "linear_actuator_state": "stopped",
+        "servo_angle": 90,
+    }
+
+
+class ScienceCANSubscriber(Node):
+    """Subscribes to CAN/can1/receive, decodes frames into latest_science_feedback."""
+
+    def __init__(self):
+        super().__init__('science_can_subscriber')
+        self._lock = threading.Lock()
+        self._latest = _default_science_feedback()
+        self._last_can_time = 0
+        if CAN_MSGS_AVAILABLE and CanFrame is not None:
+            self.subscription = self.create_subscription(
+                CanFrame, SCIENCE_CAN_RX_TOPIC, self._can_callback, 10
+            )
+            self.get_logger().info(f"Subscribed to {SCIENCE_CAN_RX_TOPIC}")
+        else:
+            self.get_logger().warning("can_msgs not available, using mock data only")
+
+    def _can_callback(self, msg):
+        try:
+            can_id = msg.id
+            data = bytes(msg.data[: msg.dlc])
+            with self._lock:
+                self._last_can_time = time.time()
+                if can_id == 0x100 and len(data) >= 4:
+                    temps = []
+                    for i in range(0, min(10, len(data)), 2):
+                        if i + 2 <= len(data):
+                            val = struct.unpack_from("<h", data, i)[0] / 10.0
+                            temps.append(round(val, 1))
+                    if temps:
+                        self._latest["temperatures"] = temps[:5]
+                elif can_id == 0x101 and len(data) >= 2:
+                    self._latest["ultrasonic_cm"] = round(struct.unpack_from("<H", data, 0)[0] / 10.0, 1)
+                elif can_id == 0x102 and len(data) >= 4:
+                    self._latest["current_amps"] = round(struct.unpack_from("<f", data, 0)[0], 3)
+                elif 0x103 <= can_id <= 0x10B and len(data) >= 8:
+                    idx = (can_id - 0x103) * 2
+                    v0, v1 = struct.unpack_from("<ff", data, 0)
+                    arr = self._latest.get("spectrophotometer", [0.0] * 18)
+                    while len(arr) < 18:
+                        arr.append(0.0)
+                    arr[idx] = round(v0, 4)
+                    if idx + 1 < 18:
+                        arr[idx + 1] = round(v1, 4)
+                    self._latest["spectrophotometer"] = arr
+        except Exception as e:
+            self.get_logger().error(f"CAN decode error: {e}")
+
+    def get_feedback(self):
+        with self._lock:
+            return dict(self._latest)
+
+
+class ScienceCANPublisher(Node):
+    """Publishes control frames to CAN/can1/transmit."""
+
+    def __init__(self):
+        super().__init__('science_can_publisher')
+        self._lock = threading.Lock()
+        self._state = {
+            "drill": "stopped",
+            "linear_actuator": "stopped",
+            "heating_on": False,
+            "cooling_on": False,
+            "nir_on": False,
+            "servo_angle": 90,
+        }
+        if CAN_MSGS_AVAILABLE and CanFrame is not None:
+            self.publisher = self.create_publisher(CanFrame, SCIENCE_CAN_TX_TOPIC, 10)
+            self.get_logger().info(f"Publishing to {SCIENCE_CAN_TX_TOPIC}")
+        else:
+            self.publisher = None
+
+    def publish_control(self, data):
+        """Encode control dict into CAN frame 0x200 and publish."""
+        with self._lock:
+            drill = data.get("drill", self._state["drill"])
+            linact = data.get("linear_actuator", self._state["linear_actuator"])
+            self._state["drill"] = drill if drill in ("up", "down", "stopped") else "stopped"
+            self._state["linear_actuator"] = linact if linact in ("up", "down", "stopped") else "stopped"
+            self._state["heating_on"] = data.get("heating_on", self._state["heating_on"])
+            self._state["cooling_on"] = data.get("cooling_on", self._state["cooling_on"])
+            self._state["nir_on"] = data.get("nir_on", self._state["nir_on"])
+            servo = int(data.get("servo_angle", self._state["servo_angle"]))
+            self._state["servo_angle"] = max(0, min(180, servo))
+
+        if self.publisher is None:
+            return
+        try:
+            msg = CanFrame()
+            msg.id = 0x200
+            msg.dlc = 8
+            msg.is_extended = False
+            msg.is_rtr = False
+            msg.is_error = False
+            drill_map = {"stopped": 0, "up": 1, "down": 2}
+            linact_map = {"stopped": 0, "up": 1, "down": 2}
+            msg.data = [
+                drill_map.get(self._state["drill"], 0),
+                linact_map.get(self._state["linear_actuator"], 0),
+                1 if self._state["heating_on"] else 0,
+                1 if self._state["cooling_on"] else 0,
+                1 if self._state["nir_on"] else 0,
+                self._state["servo_angle"] & 0xFF,
+                0,
+                0,
+            ]
+            self.publisher.publish(msg)
+        except Exception as e:
+            self.get_logger().error(f"CAN publish error: {e}")
+
+
+science_can_subscriber = None
+science_can_publisher = None
+if ROS_IMPORTS_AVAILABLE:
+    try:
+        science_can_subscriber = ScienceCANSubscriber()
+        science_can_publisher = ScienceCANPublisher()
+        ros_manager.add_node(science_can_subscriber)
+        ros_manager.add_node(science_can_publisher)
+    except Exception as e:
+        logging.warning(f"Science CAN nodes failed to init: {e}. Science page will use mock data.")
+
+
+def get_science_feedback(request):
+    """GET /api/science-feedback/ - latest science sensor data (from CAN or mock)."""
+    try:
+        fb = _default_science_feedback()
+        if science_can_subscriber is not None:
+            fb = science_can_subscriber.get_feedback()
+        # Merge last commanded actuator state from publisher
+        if science_can_publisher is not None:
+            with science_can_publisher._lock:
+                fb["drill_state"] = science_can_publisher._state["drill"]
+                fb["linear_actuator_state"] = science_can_publisher._state["linear_actuator"]
+                fb["heating_on"] = science_can_publisher._state["heating_on"]
+                fb["cooling_on"] = science_can_publisher._state["cooling_on"]
+                fb["nir_on"] = science_can_publisher._state["nir_on"]
+                fb["servo_angle"] = science_can_publisher._state["servo_angle"]
+        return JsonResponse(fb)
+    except Exception as e:
+        logging.error(f"Science feedback error: {e}")
+        return JsonResponse(_default_science_feedback())
+
+
+@csrf_exempt
+def set_science_control(request):
+    """POST /api/science-control/ - send control commands via CAN."""
+    if request.method != "POST":
+        return JsonResponse({"error": "Invalid request method"}, status=405)
+    try:
+        data = json.loads(request.body)
+        if science_can_publisher is not None:
+            science_can_publisher.publish_control(data)
+        return JsonResponse({"status": "success", "message": "Science control command sent!"})
+    except json.JSONDecodeError as e:
+        logging.error(f"Invalid JSON: {e}")
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    except Exception as e:
+        logging.error(f"Science control error: {e}")
+        return JsonResponse({"error": "Internal server error"}, status=500)
+
+
+# (old kanga_interfaces Science nodes removed)
+# class _ScienceFeedbackSubscriber(Node):
 #     # Subscriber to Science Feedback topic
 #     def __init__(self):
 #         super().__init__('science_feedback_subscriber')

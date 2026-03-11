@@ -11,6 +11,7 @@ import CameraFeed from 'pages/CameraFeed/CameraFeed';
 import LogViewer from 'pages/LogViewer/LogViewer';
 import Checklist from 'pages/Checklist/Checklist';
 import AutoMap from 'pages/AutoMap/AutoMap';
+import Science from 'pages/Science/Science';
 
 import './styles/variables.css';
 import './App.css';
@@ -33,6 +34,7 @@ function AppContent() {
         <Route path="/cameras" element={<ProtectedRoute><CameraFeed /></ProtectedRoute>} />
         <Route path="/checklist" element={<ProtectedRoute><Checklist /></ProtectedRoute>} />
         <Route path="/automap" element={<ProtectedRoute><AutoMap /></ProtectedRoute>} />
+        <Route path="/science" element={<ProtectedRoute><Science /></ProtectedRoute>} />
         <Route path="/logs" element={<ProtectedRoute><LogViewer /></ProtectedRoute>} />
         <Route path="*" element={<ProtectedRoute><div className="text-center mt-4">404 Not Found</div></ProtectedRoute>} />
           </Routes>

@@ -127,6 +127,9 @@ export default function MainNavbar() {
                 <li>
                   <a className="dropdown-item" href="/automap/">AutoMap</a>
                 </li>
+                <li>
+                  <a className="dropdown-item" href="/science/">Science</a>
+                </li>
               </ul>
             </li>
 

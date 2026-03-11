@@ -94,6 +94,10 @@ CSRF_TRUSTED_ORIGINS = [
   'http://10.0.0.2:8080',
   'http://localhost:5173',
   'http://127.0.0.1:5173',
+  'http://10.42.0.11',
+  'http://10.42.0.11:3000',
+  'http://10.42.0.11:8080',
+  'http://10.42.0.11:5173',
 ]
 
 # When credentials are included, Access-Control-Allow-Origin cannot be '*'.
@@ -116,6 +120,10 @@ CORS_ALLOWED_ORIGINS = [
     "http://10.0.0.2:5173",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "http://10.42.0.11",
+    "http://10.42.0.11:3000",
+    "http://10.42.0.11:8080",
+    "http://10.42.0.11:5173",
 ]
 CORS_ALLOW_CREDENTIALS = True
 
