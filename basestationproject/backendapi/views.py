@@ -24,6 +24,7 @@ import logging
 try:
     from sensor_msgs.msg import Image, CompressedImage, JointState
     from std_msgs.msg import String, Bool, Empty
+    from geometry_msgs.msg import Twist
     from kanga_interfaces.msg import (
         # ScienceFeedback,
         # ScienceControl,
@@ -56,6 +57,7 @@ import os
 import numpy as np
 import httpx
 import json
+import math
 import time
 import threading
 import traceback
@@ -746,7 +748,7 @@ class ScienceCANPublisher(Node):
             "servo_angle": 90,
         }
         if CAN_MSGS_AVAILABLE and CanFrame is not None:
-            self.publisher = self.create_publisher(CanFrame, SCIENCE_CAN_TX_TOPIC, 10)
+            self.publisher = self.create_publisher(CanFrame, SCIENCE_CAN_TX_TOPIC, 100)
             self.get_logger().info(f"Publishing to {SCIENCE_CAN_TX_TOPIC}")
         else:
             self.publisher = None
@@ -954,38 +956,6 @@ def set_science_control(request):
 
 # ----------------------------
 
-ARM_COMMAND_TOPIC = "arm_command"
-# GRIPPER_COMMAND_TOPIC = "gripper_command"
-# ARM_FEEDBACK_TOPIC = "armgripper"
-# ARM_FEEDBACK_TOPIC = "arm_feedback" # dont need 
-
-
-# ─── ArmCommandPublisher Node ────────────────────────────────────────────────────
-class ArmCommandPublisher(Node):
-    def __init__(self):
-        super().__init__('arm_command_publisher')
-        # Publish JointState messages on /arm_command
-        self.publisher = self.create_publisher(JointState, ARM_COMMAND_TOPIC, 10)
-        self.get_logger().info("ArmCommandPublisher initialized, publishing to /arm_command")
-
-    def publish_arm_command(self, joint_positions):
-        """
-        joint_positions: list of 6 floats
-        Publishes a sensor_msgs/JointState on /arm_command.
-        """
-        try:
-            msg = JointState()
-            msg.header.stamp = self.get_clock().now().to_msg()
-            # Name joints "joint_0" ... "joint_5"
-            msg.name = [f"joint_{i}" for i in range(len(joint_positions))]
-            msg.position = [float(x) for x in joint_positions]
-            # velocities/effort left empty
-            self.publisher.publish(msg)
-            self.get_logger().info(f"Published JointState: {msg.position}")
-        except Exception as e:
-            self.get_logger().error(f"Error publishing arm command: {e}")
-
-
 # ─── ArmFeedbackSubscriber Node ─────────────────────────────────────────────────
 class ArmFeedbackSubscriber(Node):
     def __init__(self):
@@ -1038,85 +1008,128 @@ class ArmFeedbackSubscriber(Node):
 
 # ─── ArmVelocityPublisher Node ───────────────────────────────────────────────
 class ArmVelocityPublisher(Node):
+    # J6 position-increment parameters (mirror joy_to_hybrid_control defaults)
+    _J6_PWM_SPEED = 30.0    # deg/s per unit of j6 velocity (-1..1)
+    _J6_MIN_ANGLE = 0.0     # degrees
+    _J6_MAX_ANGLE = 180.0   # degrees
+    _J6_START_ANGLE = 180.0  # degrees
+
     def __init__(self):
         super().__init__('arm_velocity_publisher')
+        self._j6_position = self._J6_START_ANGLE
+        self._j6_last_time = None  # wall-clock time of last publish (None = uninitialized)
         try:
-            # Publish to /arm_velocity_command with JointState
-            self.publisher = self.create_publisher(JointState, '/arm_velocity_command', 10)
-            self.get_logger().info("ArmVelocityPublisher initialized, publishing to /arm_velocity_command")
+            self.publisher = self.create_publisher(JointState, '/kanga_arm/joint_control', 100)
+            self.get_logger().info("ArmVelocityPublisher initialized, publishing to /kanga_arm/joint_control")
         except Exception as e:
             logging.error(f"Error initializing ArmVelocityPublisher: {e}")
 
     def publish_velocity(self, velocity_list):
         try:
-            # velocity_list should be a list of 6 floats (one per joint, including EE)
-            vel_msg = JointState()
-            vel_msg.velocity = [float(v) for v in velocity_list]
-            # Fill in names for clarity (must match the arm’s joint names)
-            vel_msg.name = [f"joint_{i}" for i in range(len(velocity_list))]
-            # We do not set vel_msg.position (or effort) here—only velocities matter
-            vel_msg.header.stamp = self.get_clock().now().to_msg()
-            self.publisher.publish(vel_msg)
-            self.get_logger().info(f"Published velocity to /arm_velocity_command: {velocity_list}")
+            # J1-J6: all velocities normalized -1..1 (no deg/rad conversion)
+            vel = [max(-1.0, min(1.0, float(v))) for v in velocity_list[:5]]
+            while len(vel) < 5:
+                vel.append(0.0)
+            j6_vel = float(velocity_list[5]) if len(velocity_list) > 5 else 0.0
+            j6_vel = max(-1.0, min(1.0, j6_vel))
+            vel.append(j6_vel)
+
+            # Compute dt for J6 position integration (degrees 0-180)
+            now = time.monotonic()
+            dt = 0.0 if self._j6_last_time is None else (now - self._j6_last_time)
+            self._j6_last_time = now
+
+            # Accumulate J6 position (deg) based on velocity and increment rate, clamp 0-180
+            self._j6_position += j6_vel * self._J6_PWM_SPEED * max(dt, 0.0)
+            self._j6_position = max(self._J6_MIN_ANGLE, min(self._J6_MAX_ANGLE, self._j6_position))
+
+            msg = JointState()
+            msg.velocity = vel
+            msg.name = ["j1", "j2", "j3", "j4", "j5", "j6"]
+            msg.position = [0.0] * 6
+            msg.position[5] = self._j6_position
+            msg.header.stamp = self.get_clock().now().to_msg()
+            self.publisher.publish(msg)
+            self.get_logger().info(
+                f"Published velocity to /kanga_arm/joint_control: {vel[:5]} "
+                f"j6_vel={j6_vel} j6_pos={self._j6_position:.2f}deg")
         except Exception as e:
             self.get_logger().error(f"Error publishing velocity command: {e}")
 
-# ─── Instantiate and register the velocity publisher with your ROS2Manager ────────
-# (Assuming you already have ros_manager = ROS2Manager.get_instance())
+# ─── ArmEEPublisher Node (Twist to kanga_arm/ee_state_control) ─────────────────
+class ArmEEPublisher(Node):
+    def __init__(self):
+        super().__init__('arm_ee_publisher')
+        try:
+            self.publisher = self.create_publisher(Twist, 'kanga_arm/ee_state_control', 100)
+            self.get_logger().info("ArmEEPublisher initialized, publishing to kanga_arm/ee_state_control")
+        except Exception as e:
+            logging.error(f"Error initializing ArmEEPublisher: {e}")
+
+    def publish_ee(self, linear_y, linear_z, angular_x):
+        try:
+            msg = Twist()
+            msg.linear.x = float(linear_y)
+            msg.linear.y = 0.0
+            msg.linear.z = float(linear_z)
+            msg.angular.x = 0.0
+            msg.angular.y = float(angular_x)
+            msg.angular.z = 0.0
+            self.publisher.publish(msg)
+            self.get_logger().info(
+                f"Published EE: Vx={msg.linear.x} Vz={msg.linear.z} Wy={msg.angular.y}")
+        except Exception as e:
+            self.get_logger().error(f"Error publishing EE command: {e}")
+
+    def publish_zero(self):
+        try:
+            msg = Twist()
+            self.publisher.publish(msg)
+        except Exception as e:
+            self.get_logger().error(f"Error publishing zero twist: {e}")
+
+
+# ─── ArmModePublisher Node (Bool to kanga_arm/control_mode_joint) ──────────────
+class ArmModePublisher(Node):
+    def __init__(self):
+        super().__init__('arm_mode_publisher')
+        try:
+            self.publisher = self.create_publisher(Bool, 'kanga_arm/control_mode_joint', 100)
+            self.get_logger().info("ArmModePublisher initialized, publishing to kanga_arm/control_mode_joint")
+        except Exception as e:
+            logging.error(f"Error initializing ArmModePublisher: {e}")
+
+    def publish_mode(self, is_joint: bool):
+        try:
+            msg = Bool()
+            msg.data = is_joint
+            self.publisher.publish(msg)
+            self.get_logger().info(f"Published mode: {'joint' if is_joint else 'ee'}")
+        except Exception as e:
+            self.get_logger().error(f"Error publishing mode: {e}")
+
+
+# ─── Instantiate and register all arm nodes ────────────────────────────────────
 arm_velocity_node = ArmVelocityPublisher()
 ros_manager.add_node(arm_velocity_node)
 
+arm_ee_node = ArmEEPublisher()
+ros_manager.add_node(arm_ee_node)
 
-# 1) Create nodes
-arm_command_node = ArmCommandPublisher()
+arm_mode_node = ArmModePublisher()
+ros_manager.add_node(arm_mode_node)
+
 arm_feedback_node = ArmFeedbackSubscriber()
-
-# 2) Add them to the ROS2Manager so they start spinning in the background
-ros_manager.add_node(arm_command_node)
 ros_manager.add_node(arm_feedback_node)
 
 
-# ─── Send commands to interface ────────────────────────────────────────────────────────────────
-@csrf_exempt
-def send_arm_command(request):
-    """
-    POST /api/arm-command/
-    Expects JSON body: { "joint_positions": [float0, float1, ..., float5] }
-    Publishes those 6 floats as a JointState on /arm_command via arm_command_node.
-    """
-    if request.method != "POST":
-        return JsonResponse({"error": "Invalid request method"}, status=405)
-
-    try:
-        data = json.loads(request.body)
-        joint_positions = data.get("joint_positions", [])
-
-        if not isinstance(joint_positions, list) or len(joint_positions) != 6:
-            return JsonResponse(
-                {"error": "Expected 'joint_positions' as a list of 6 floats"},
-                status=400
-            )
-
-        # Publish to ROS2:
-        arm_command_node.publish_arm_command(joint_positions)
-        return JsonResponse({"message": "Command sent successfully!"})
-    except json.JSONDecodeError:
-        logging.error("Invalid JSON in send_arm_command")
-        return JsonResponse({"error": "Invalid JSON"}, status=400)
-    except Exception as e:
-        logging.error(f"Error in send_arm_command: {e}")
-        return JsonResponse({"error": "Internal server error"}, status=500)
-
-
-# =================================
-
-
+# ─── Send velocity commands to interface ────────────────────────────────────────────
 @csrf_exempt
 def send_arm_velocity(request):
     """
     Expects a POST with JSON body:
       { "joint_velocities": [v0, v1, v2, v3, v4, v5] }
-    Publishes those six floats into JointState.velocity and sends on /arm_velocity_command.
+    Publishes JointState to /kanga_arm/joint_control (deg/s converted to rad/s).
     """
     if request.method != "POST":
         return JsonResponse({"error": "POST required"}, status=405)
@@ -1134,28 +1147,96 @@ def send_arm_velocity(request):
             status=400
         )
 
-    # For now, only command the first 5 joints.
-    # If a 6th element (gripper) is provided, it is ignored.
-    if len(velocities) == 6:
-        # Commented out, but kept for reference:
-        # full_velocities = velocities
-        velocities = velocities[:5]
-    elif len(velocities) == 5:
-        # Already only joints 1–5.
-        pass
-    else:
+    if len(velocities) == 5:
+        velocities = list(velocities) + [0.0]
+    elif len(velocities) != 6:
         return JsonResponse(
             {"error": "Expected 'joint_velocities' as a list of 5 or 6 numbers."},
             status=400
         )
 
     try:
-        # Publish to the ROS2 topic with only the first 5 joints.
         arm_velocity_node.publish_velocity(velocities)
         return JsonResponse({"status": "velocity command sent"})
     except Exception as e:
         logging.error(f"Unexpected error in send_arm_velocity: {e}")
         return JsonResponse({"error": "Failed to publish velocity"}, status=500)
+
+
+# ─── EE command endpoint (Twist Vy/Vz/Wx + joint_control J1/J5/J6) ───────────
+@csrf_exempt
+def send_arm_ee_command(request):
+    """
+    POST /api/arm-ee-command/
+    Body: {
+      "linear_y": float (Vy, EE frame),
+      "linear_z": float (Vz, EE frame),
+      "angular_x": float (Wx, EE frame),
+      "j1_velocity": float (optional, deg/s),
+      "j5_velocity": float (optional, deg/s),
+      "j6_velocity": float (optional, -1..1)
+    }
+    Publishes Twist (Vy, Vz, Wx) to kanga_arm/ee_state_control and
+    JointState (J1/J5/J6 only) to /kanga_arm/joint_control.
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+
+    try:
+        p = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    try:
+        ly = float(p.get("linear_y", 0))
+        lz = float(p.get("linear_z", 0))
+        wx = float(p.get("angular_x", 0))
+        j1 = float(p.get("j1_velocity", 0))
+        j5 = float(p.get("j5_velocity", 0))
+        j6 = float(p.get("j6_velocity", 0))
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "All values must be numbers"}, status=400)
+
+    try:
+        arm_ee_node.publish_ee(ly, lz, wx)
+        arm_velocity_node.publish_velocity([j1, 0, 0, 0, j5, j6])
+        return JsonResponse({"status": "ee command sent"})
+    except Exception as e:
+        logging.error(f"Error in send_arm_ee_command: {e}")
+        return JsonResponse({"error": "Failed to publish EE command"}, status=500)
+
+
+# ─── Mode toggle endpoint ────────────────────────────────────────────────────────
+@csrf_exempt
+def set_arm_mode(request):
+    """
+    POST /api/arm-mode/
+    Body: { "mode": "joint" | "ee" }
+    Publishes Bool to kanga_arm/control_mode_joint (true = joint).
+    On switch to joint mode, a zero Twist is also published to clear EE.
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+
+    try:
+        p = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    mode = p.get("mode", "").lower()
+    if mode not in ("joint", "ee"):
+        return JsonResponse({"error": "mode must be 'joint' or 'ee'"}, status=400)
+
+    is_joint = mode == "joint"
+    try:
+        arm_mode_node.publish_mode(is_joint)
+        if is_joint:
+            arm_ee_node.publish_zero()
+        return JsonResponse({"status": f"mode set to {mode}"})
+    except Exception as e:
+        logging.error(f"Error in set_arm_mode: {e}")
+        return JsonResponse({"error": "Failed to publish mode"}, status=500)
+
 
 # =================================
 def get_arm_feedback(request):

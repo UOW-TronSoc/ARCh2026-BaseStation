@@ -52,7 +52,7 @@ export function BatteryProvider({ children }) {
     };
 
     fetchBattery();
-    const timer = setInterval(fetchBattery, 2000); // 0.5 Hz — single shared poll for navbar + dashboard
+    const timer = setInterval(fetchBattery, 10000); // every 10 seconds — single shared poll for navbar + dashboard
     return () => clearInterval(timer);
   }, []);
 

@@ -5,8 +5,8 @@ import path from 'path';
 export default defineConfig({
   plugins: [react()],
   server: {
-    host: true, // listen on 0.0.0.0 so accessible from other devices (e.g. 10.0.0.2 → http://10.0.0.1:5173)
-    port: 5173,
+    host: true, // listen on 0.0.0.0 so accessible from other devices (e.g. 10.0.0.2 → http://10.0.0.1:3000)
+    port: 3000,
   },
   resolve: {
     alias: {

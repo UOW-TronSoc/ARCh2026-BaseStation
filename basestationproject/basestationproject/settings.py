@@ -80,24 +80,17 @@ WSGI_APPLICATION = 'basestationproject.wsgi.application'
 
 CSRF_TRUSTED_ORIGINS = [
   'http://localhost:3000',
-  "http://127.0.0.1:3000",
-  'http://localhost:8000',
-  'http://localhost:8080',
-  'http://127.0.0.1:8080',
-  'http://django_server:8000',
-  # Access from client at 10.0.0.2 to server at 10.0.0.1
-  'http://10.0.0.1',
-  'http://10.0.0.1:8000',
-  'http://10.0.0.1:8080',
-  'http://10.0.0.2',
-  'http://10.0.0.2:3000',
-  'http://10.0.0.2:8080',
+  'http://127.0.0.1:3000',
   'http://localhost:5173',
   'http://127.0.0.1:5173',
-  'http://10.42.0.11',
+  'http://10.0.0.2:3000',
+  'http://10.0.0.2:5173',
+  'http://10.0.0.1:5173',
+  'http://10.0.0.1:3000',
   'http://10.42.0.11:3000',
-  'http://10.42.0.11:8080',
   'http://10.42.0.11:5173',
+  'http://10.153.87.4:5173',
+  'http://10.153.87.4:3000',
 ]
 
 # When credentials are included, Access-Control-Allow-Origin cannot be '*'.
@@ -106,24 +99,15 @@ CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "http://localhost:8000",
-    "http://localhost:8080",
-    "http://127.0.0.1:8080",
-    "http://django_server:8000",
-    "http://10.0.0.1",
-    "http://10.0.0.1:8000",
-    "http://10.0.0.1:8080",
-    "http://10.0.0.1:5173",
-    "http://10.0.0.2",
-    "http://10.0.0.2:3000",
-    "http://10.0.0.2:8080",
-    "http://10.0.0.2:5173",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "http://10.42.0.11",
+    "http://10.0.0.2:3000",
+    "http://10.0.0.2:5173",
+    "http://10.0.0.1:5173",
     "http://10.42.0.11:3000",
-    "http://10.42.0.11:8080",
     "http://10.42.0.11:5173",
+    "http://10.153.87.4:5173",
+    "http://10.153.87.4:3000",
 ]
 CORS_ALLOW_CREDENTIALS = True
 

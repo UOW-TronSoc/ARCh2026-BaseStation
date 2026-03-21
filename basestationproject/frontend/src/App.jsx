@@ -7,6 +7,7 @@ import PinPage from 'pages/PinPage/PinPage';
 import Dashboard from 'pages/Dashboard/Dashboard';
 import ScriptManager from 'pages/ScriptManager/ScriptManager';
 import ArmControl from 'pages/ArmControl/ArmControl';
+import ArmControlCompact from 'pages/ArmControlCompact/ArmControlCompact';
 import CameraFeed from 'pages/CameraFeed/CameraFeed';
 import LogViewer from 'pages/LogViewer/LogViewer';
 import Checklist from 'pages/Checklist/Checklist';
@@ -30,6 +31,7 @@ function AppContent() {
         <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
         <Route path="/arm-control" element={<ProtectedRoute><ArmControl /></ProtectedRoute>} />
+        <Route path="/control" element={<ProtectedRoute><ArmControlCompact /></ProtectedRoute>} />
         <Route path="/script-manager" element={<ProtectedRoute><ScriptManager /></ProtectedRoute>} />
         <Route path="/cameras" element={<ProtectedRoute><CameraFeed /></ProtectedRoute>} />
         <Route path="/checklist" element={<ProtectedRoute><Checklist /></ProtectedRoute>} />

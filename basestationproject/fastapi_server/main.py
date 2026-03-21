@@ -63,7 +63,7 @@ class ROS2Client:
         try:
             rclpy.init()
             self.node = rclpy.create_node('fastapi_ros2_client')
-            self.publisher = self.node.create_publisher(Twist, CMD_VELOCITY_TOPIC, 10)
+            self.publisher = self.node.create_publisher(Twist, CMD_VELOCITY_TOPIC, 100)
             self.node.get_logger().info(
                 f"ROS2Client initialized. Publishing Twist messages on {CMD_VELOCITY_TOPIC}"
             )

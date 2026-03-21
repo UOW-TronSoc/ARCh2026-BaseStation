@@ -1,18 +1,25 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import styles from "./IncrementalMovementCard.module.css";
 
-const jointTargets = ["Theta1", "Theta2", "Theta3", "Theta4", "Theta5", "EE"];
-const worldTargets = ["X", "Y", "Z", "Alpha", "Beta", "EE"];
+const JOINT_TARGETS = ["Theta1", "Theta2", "Theta3", "Theta4", "Theta5"];
+const EE_TARGETS = ["Vy", "Vz", "Pitch"];
+const QUICK_VELS = [5, 10, 20];
 
-export default function IncrementalMovementCard({ onIncrement }) {
-  const [mode, setMode] = useState("joint");
+export default function IncrementalMovementCard({ mode = "joint", onIncrement }) {
   const [selected, setSelected] = useState(null);
   const [value, setValue] = useState("");
 
-  const handleModeChange = (newMode) => {
-    setMode(newMode);
+  const targets = mode === "ee" ? EE_TARGETS : JOINT_TARGETS;
+  const isEE = mode === "ee";
+
+  useEffect(() => {
     setSelected(null);
     setValue("");
+  }, [mode]);
+
+  const sendVelocity = (vel) => {
+    if (!selected || !onIncrement) return;
+    onIncrement(mode, selected, vel);
   };
 
   const handleSend = () => {
@@ -24,40 +31,24 @@ export default function IncrementalMovementCard({ onIncrement }) {
       return;
     }
 
-    // Invoke parent callback only; Django/ROS2 integration will happen there
-    if (onIncrement) {
-      onIncrement(mode, selected, numericValue);
-    }
+    onIncrement(mode, selected, numericValue);
     setValue("");
   };
 
-  const targets = mode === "joint" ? jointTargets : worldTargets;
+  const formatLabel = (t) => {
+    if (isEE) return t;
+    return t.replace("Theta", "J");
+  };
 
   return (
     <div className="card p-3">
-      <h5 className="text-center mb-3 header">Incremental Movement</h5>
+      <h5 className="text-center mb-3 header">
+        {isEE ? "End-Effector Control" : "Joint Velocity"}
+      </h5>
+      <p className="text-center text-muted small mb-3">
+        {isEE ? "EE frame: Vy, Vz, Pitch" : "deg/s per joint"}
+      </p>
 
-      {/* Mode Switch */}
-      <div className="d-flex justify-content-center gap-2 mb-3">
-        <button
-          className={`btn ${
-            mode === "joint" ? styles.activeButton : styles.inactiveButton
-          }`}
-          onClick={() => handleModeChange("joint")}
-        >
-          Joint
-        </button>
-        <button
-          className={`btn ${
-            mode === "world" ? styles.activeButton : styles.inactiveButton
-          }`}
-          onClick={() => handleModeChange("world")}
-        >
-          World
-        </button>
-      </div>
-
-      {/* Target Buttons */}
       <div className="d-flex flex-wrap justify-content-center gap-2 mb-3">
         {targets.map((t) => (
           <button
@@ -67,17 +58,37 @@ export default function IncrementalMovementCard({ onIncrement }) {
             }`}
             onClick={() => setSelected(t)}
           >
-            {t}
+            {formatLabel(t)}
           </button>
         ))}
       </div>
 
-      {/* Input + Send */}
+      {selected && (
+        <div className="d-flex flex-wrap justify-content-center gap-2 mb-2">
+          {QUICK_VELS.flatMap((v) => [
+            <button
+              key={`-${v}`}
+              className="btn btn-outline-secondary btn-sm"
+              onClick={() => sendVelocity(-v)}
+            >
+              -{v}
+            </button>,
+            <button
+              key={`+${v}`}
+              className="btn btn-outline-primary btn-sm"
+              onClick={() => sendVelocity(v)}
+            >
+              +{v}
+            </button>,
+          ])}
+        </div>
+      )}
+
       <div className="input-group">
         <input
           type="number"
           className="form-control bg-dark text-white"
-          placeholder="Enter Value (-100 to 100)"
+          placeholder={isEE ? "Value (-100 to 100)" : "Velocity deg/s (-100 to 100)"}
           value={value}
           onChange={(e) => setValue(e.target.value)}
           disabled={!selected}

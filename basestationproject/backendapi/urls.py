@@ -30,8 +30,9 @@ urlpatterns = [
 
     # arm
     path('arm-feedback/', get_arm_feedback, name='arm_feedback'),
-    path('arm-command/', send_arm_command, name='arm_command'),
     path("arm-velocity-command/", send_arm_velocity, name='arm_velocity'),
+    path("arm-ee-command/", send_arm_ee_command, name='arm_ee_command'),
+    path("arm-mode/", set_arm_mode, name='arm_mode'),
     
     
     # radio

@@ -224,7 +224,7 @@ export default function Dashboard() {
 
         const axisLX = applyAxisDeadzone(-(gp.axes[1] ?? 0), 0.3); // forward/back
         const axisLY = applyAxisDeadzone( (gp.axes[0] ?? 0), 0.3); // strafe
-        const axisAZ = applyAxisDeadzone(-(gp.axes[2] ?? 0), 0.3); // twist
+        const axisAZ = applyAxisDeadzone( (gp.axes[2] ?? 0), 0.3); // twist
 
         nextLinear = {
           x: axisLX * scale,
@@ -241,7 +241,7 @@ export default function Dashboard() {
         const scale = baseScale;
         const axisLX2 = applyAxisDeadzone(-(gp.axes[1] ?? 0), 0.3);
         const axisLY2 = applyAxisDeadzone( (gp.axes[0] ?? 0), 0.3);
-        const axisAZ2 = applyAxisDeadzone( (gp.axes[2] ?? gp.axes[3] ?? 0), 0.3);
+        const axisAZ2 = applyAxisDeadzone(-(gp.axes[2] ?? gp.axes[3] ?? 0), 0.3);
 
         nextLinear = {
           x: axisLX2 * scale,

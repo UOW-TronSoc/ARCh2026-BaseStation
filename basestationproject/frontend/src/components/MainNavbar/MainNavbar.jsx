@@ -107,7 +107,7 @@ export default function MainNavbar() {
               </a>
               <ul className="dropdown-menu dropdown-menu-end" aria-labelledby="controlDropdown">
                 <li>
-                  <a className="dropdown-item" href="/arm-control/">Arm Control</a>
+                  <a className="dropdown-item" href="/control/">Arm Control</a>
                 </li>
                 <li>
                   <a className="dropdown-item" href="/dashboard/">Dashboard</a>

@@ -12,15 +12,8 @@ function ArmScene({ jointAngles }) {
   const robotRef = useRef(null);
   const { scene } = useThree();
 
-  // List your exact URDF joint names in the same order as jointAngles[0..4]:
-  // URDF uses J1, J2, J3, J4, J5 for the 5 revolute joints
-  const jointNames = [
-    "J1",       // index 0 - first revolute joint
-    "J2",       // index 1
-    "J3",       // index 2
-    "J4",       // index 3
-    "J5",       // index 4 - fifth revolute joint
-  ];
+  // URDF joint names (J1-J5)
+  const jointNames = ["J1", "J2", "J3", "J4", "J5"];
 
   // Load the URDF once
   useEffect(() => {
@@ -57,7 +50,6 @@ function ArmScene({ jointAngles }) {
         console.log("Available joints:", Object.keys(robot.joints));
         robotRef.current = robot;
 
-        // Apply URDF-like link colors in Three.js
         const linkColors = {
           link_0: new THREE.Color(0.866667, 0.321569, 0.156863),
           link_1: new THREE.Color(0.909804, 0.572549, 0.164706),
