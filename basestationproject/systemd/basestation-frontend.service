@@ -5,8 +5,8 @@ After=network.target
 [Service]
 Type=simple
 User=kanga
-WorkingDirectory=/home/kanga/kanga/ARCh2026-BaseStation/basestationproject/frontend
-ExecStart=/home/kanga/kanga/ARCh2026-BaseStation/basestationproject/scripts/run_npm_dev.sh
+WorkingDirectory=/home/kanga/kanga/basestation/basestationproject/frontend
+ExecStart=/home/kanga/kanga/basestation/basestationproject/scripts/run_npm_dev.sh
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal

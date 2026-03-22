@@ -134,6 +134,8 @@ function canExpandTo(slotIndex, gridSlots, newColSpan, newRowSpan) {
 
 const CameraFeed = () => {
   const [cameras, setCameras] = useState([]);
+  /** Maps api id e.g. usb_8 -> "/dev/video8" (from backend discovery, not a UI slot). */
+  const [usbDevicePaths, setUsbDevicePaths] = useState({});
   const [activeCameras, setActiveCameras] = useState([]);
   const [imageSrcs, setImageSrcs] = useState([]);
   const [focusedCameras, setFocusedCameras] = useState([]);
@@ -148,6 +150,7 @@ const CameraFeed = () => {
       .then((data) => {
         const list = data.cameras || [];
         setCameras(list);
+        setUsbDevicePaths(data.usb_device_paths || {});
         setActiveCameras(Array(list.length).fill(false));
         setImageSrcs(Array(list.length).fill(""));
       })
@@ -200,7 +203,10 @@ const CameraFeed = () => {
     const ipMatch = name.match(/^ip_(\d+)$/);
     if (ipMatch) return `IP Camera ${ipMatch[1]}`;
     const usbMatch = name.match(/^usb_(\d+)$/);
-    if (usbMatch) return `USB Camera ${parseInt(usbMatch[1]) + 1}`;
+    if (usbMatch) {
+      const dev = usbDevicePaths[name];
+      return dev ? `USB ${dev}` : `USB /dev/video${usbMatch[1]}`;
+    }
     return name.charAt(0).toUpperCase() + name.slice(1);
   };
 

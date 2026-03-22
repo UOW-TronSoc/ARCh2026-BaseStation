@@ -9,6 +9,11 @@ export PATH="${HOME}/.local/bin:${PATH:-/usr/bin:/bin}"
 if [[ -n "${BASESTATION_VENV}" && -f "${BASESTATION_VENV}/bin/activate" ]]; then
   source "${BASESTATION_VENV}/bin/activate"
 fi
+ROS_DISTRO="${ROS_DISTRO:-humble}"
+if [[ -f "/opt/ros/${ROS_DISTRO}/setup.bash" ]]; then
+  # Base install (rclpy, etc.); required when using a venv that does not include ROS Python packages.
+  source "/opt/ros/${ROS_DISTRO}/setup.bash"
+fi
 KANGA_WS="${KANGA_ROS2_WS:-/home/kanga/kanga/ARCH2026-Kanga}"
 if [[ -f "$KANGA_WS/install/setup.bash" ]]; then
   source "$KANGA_WS/install/setup.bash"

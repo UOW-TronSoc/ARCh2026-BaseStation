@@ -1,5 +1,10 @@
 /* ───────────────── :root design tokens ───────────────── */
 :root {
+  /* Bootstrap inherits after its CSS loads; keep default text light on dark UI */
+  --bs-body-color: #fff;
+  --bs-secondary-color: rgba(255, 255, 255, 0.75);
+  --bs-heading-color: #fff;
+
   /* colors */
   --bg-page:#1e1e1e;   --nav-bg:#2f2f2f;   --nav-fg:#bbb;
   --nav-fg-hover:#fff; --nav-fg-active:#F8CE4D; --nav-pill-bg:#3A3A3A;

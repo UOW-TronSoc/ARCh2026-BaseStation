@@ -5,11 +5,11 @@ After=network.target
 [Service]
 Type=simple
 User=kanga
-WorkingDirectory=/home/kanga/kanga/ARCh2026-BaseStation/basestationproject
+WorkingDirectory=/home/kanga/kanga/basestation/basestationproject
 Environment=KANGA_ROS2_WS=/home/kanga/kanga/ARCH2026-Kanga
-# If Django is in a venv, set e.g. BASESTATION_VENV=/home/kanga/kanga/ARCh2026-BaseStation/basestationproject/venv
+Environment=BASESTATION_VENV=/home/kanga/kanga/basestation/venv
 Environment=PATH=/home/kanga/.local/bin:/usr/local/bin:/usr/bin:/bin
-ExecStart=/home/kanga/kanga/ARCh2026-BaseStation/basestationproject/scripts/source_ros2_and_run.sh python3 manage.py runserver 0.0.0.0:8000
+ExecStart=/home/kanga/kanga/basestation/basestationproject/scripts/source_ros2_and_run.sh python3 manage.py runserver 0.0.0.0:8000
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal

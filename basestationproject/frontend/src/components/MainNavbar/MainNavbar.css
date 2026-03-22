@@ -111,6 +111,25 @@
     color: var(--nav-fg-active) !important;
   }
 
+  /* Dropdown: navbar-dark link color must not apply to menu items */
+  .floating-navbar .dropdown-menu {
+    color: #000;
+  }
+
+  .floating-navbar .dropdown-item {
+    color: #000 !important;
+  }
+
+  .floating-navbar .dropdown-item:hover,
+  .floating-navbar .dropdown-item:focus {
+    color: #000 !important;
+  }
+
+  .floating-navbar .dropdown-item.active,
+  .floating-navbar .dropdown-item:active {
+    color: #000 !important;
+  }
+
   /* ========================================================================
       Battery Indicator
       ======================================================================== */

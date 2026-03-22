@@ -2,11 +2,11 @@ import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
 
 import IncrementalMovementCard from "components/IncrementalMovementCard/IncrementalMovementCard";
-import { getApiBase } from "../../config";
+import { getArmApiBase } from "../../config";
 
 export default function ArmControlCompact() {
   document.title = "Arm Control";
-  const API_BASE = getApiBase();
+  const ARM_API = getArmApiBase();
 
   const [controlMode, setControlMode] = useState("joint");
   const controlModeRef = useRef(controlMode);
@@ -22,30 +22,28 @@ export default function ArmControlCompact() {
   useEffect(() => { eeScaleRef.current = eeScale; }, [eeScale]);
   useEffect(() => { deadzoneRef.current = deadzone; }, [deadzone]);
 
-  // ─── POST `/api/arm-velocity-command/ { joint_velocities: [v1…v6] }` ───
+  // ─── POST velocity command to FastAPI /arm/velocity ───
   const sendVelocityCommand = async (velocities) => {
     if (velocityRequestInFlight.current) return;
     velocityRequestInFlight.current = true;
     try {
       const cmd = [...velocities.slice(0, 6)];
       while (cmd.length < 6) cmd.push(0);
-      await axios.post(`${API_BASE}/arm-velocity-command/`, {
-        joint_velocities: cmd,
-      });
+      await axios.post(`${ARM_API}/velocity`, { joint_velocities: cmd });
     } catch (err) {
-      console.error("❌ Failed to send velocity command:", err.message);
+      console.error("Failed to send velocity command:", err.message);
     } finally {
       velocityRequestInFlight.current = false;
     }
   };
 
-  // ─── EE command: POST Twist (Vy/Vz/Wx) + J1/J5/J6 to /api/arm-ee-command/ ────
+  // ─── EE command: POST to FastAPI /arm/ee ────
   const eeRequestInFlight = useRef(false);
   const sendEECommand = async ({ linearY = 0, linearZ = 0, angularX = 0, j1 = 0, j5 = 0, j6 = 0 } = {}) => {
     if (eeRequestInFlight.current) return;
     eeRequestInFlight.current = true;
     try {
-      await axios.post(`${API_BASE}/arm-ee-command/`, {
+      await axios.post(`${ARM_API}/ee`, {
         linear_y: linearY,
         linear_z: linearZ,
         angular_x: angularX,
@@ -60,11 +58,11 @@ export default function ArmControlCompact() {
     }
   };
 
-  // ─── Toggle joint / EE mode ────────────────────────────────────────────────────
+  // ─── Toggle joint / EE mode via FastAPI /arm/mode ────────────────────────────────
   const toggleControlMode = async () => {
     const next = controlModeRef.current === "joint" ? "ee" : "joint";
     try {
-      await axios.post(`${API_BASE}/arm-mode/`, { mode: next });
+      await axios.post(`${ARM_API}/mode`, { mode: next });
       setControlMode(next);
     } catch (err) {
       console.error("Failed to toggle mode:", err.message);

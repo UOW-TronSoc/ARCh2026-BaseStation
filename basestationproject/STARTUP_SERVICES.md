@@ -6,14 +6,14 @@ These systemd services start Django, FastAPI, and the frontend (Vite) on boot. T
 
 - **Django:** Dependencies must be visible to the service. Either:
   - `pip3 install --user -r requirements.txt` (so `~/.local/bin` and user site-packages are used), or
-  - Create a venv, install there, and set `BASESTATION_VENV` in the Django service to the venv path (e.g. `Environment=BASESTATION_VENV=/home/kanga/kanga/ARCh2026-BaseStation/basestationproject/venv`).
+  - Create a venv, install there, and set `BASESTATION_VENV` in the Django and FastAPI services (e.g. repo-root `Environment=BASESTATION_VENV=/home/kanga/kanga/basestation/venv`).
 - **FastAPI:** Same as Django if needed (or ensure `python3` used by the script can import FastAPI/uvicorn).
 - **Frontend:** Node/npm (e.g. via nvm). The service uses `scripts/run_npm_dev.sh` to load nvm and run `npm run dev`. Run `cd frontend && npm install` once.
 - **ROS2** and `kanga_interfaces` built at `KANGA_ROS2_WS`. See [ROS2_SETUP.md](ROS2_SETUP.md).
 
 ## Paths and user
 
-- **Project root:** `/home/kanga/kanga/ARCh2026-BaseStation/basestationproject`
+- **Project root:** `/home/kanga/kanga/basestation/basestationproject`
 - **ROS2 workspace:** `/home/kanga/kanga/ARCH2026-Kanga`
 - **Service user:** `kanga`
 
@@ -23,8 +23,8 @@ If your paths or user differ, edit the `WorkingDirectory`, `ExecStart`, and `Use
 
 ```bash
 # Make scripts executable
-chmod +x /home/kanga/kanga/ARCh2026-BaseStation/basestationproject/scripts/source_ros2_and_run.sh
-chmod +x /home/kanga/kanga/ARCh2026-BaseStation/basestationproject/scripts/run_npm_dev.sh
+chmod +x /home/kanga/kanga/basestation/basestationproject/scripts/source_ros2_and_run.sh
+chmod +x /home/kanga/kanga/basestation/basestationproject/scripts/run_npm_dev.sh
 
 # Copy service files (requires sudo)
 sudo cp systemd/basestation-django.service   /etc/systemd/system/

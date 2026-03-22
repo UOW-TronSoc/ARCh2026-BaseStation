@@ -19,5 +19,8 @@ export const getBackendBase = () => `${getOrigin()}:8000`;
 /** FastAPI command endpoint (port 8080), e.g. http://10.0.0.1:8080/command */
 export const getCommandUrl = () => `${getOrigin()}:8080/command`;
 
+/** FastAPI arm control base (port 8001), e.g. http://10.0.0.1:8001/arm */
+export const getArmApiBase = () => `${getOrigin()}:8001/arm`;
+
 /** Script manager API (port 8081), e.g. http://10.0.0.1:8081 */
 export const getScriptManagerBase = () => `${getOrigin()}:8081`;

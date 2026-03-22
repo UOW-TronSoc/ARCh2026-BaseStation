@@ -1,14 +1,14 @@
 [Unit]
-Description=Basestation FastAPI (cmd_vel, ROS2)
+Description=Basestation Arm FastAPI (arm control, ROS2)
 After=network.target
 
 [Service]
 Type=simple
 User=kanga
-WorkingDirectory=/home/kanga/kanga/basestation/basestationproject/fastapi_server
+WorkingDirectory=/home/kanga/kanga/basestation/basestationproject/arm_fastapi_app
 Environment=KANGA_ROS2_WS=/home/kanga/kanga/ARCH2026-Kanga
 Environment=BASESTATION_VENV=/home/kanga/kanga/basestation/venv
-ExecStart=/home/kanga/kanga/basestation/basestationproject/scripts/source_ros2_and_run.sh python3 -m uvicorn main:app --host 0.0.0.0 --port 8080
+ExecStart=/home/kanga/kanga/basestation/basestationproject/scripts/source_ros2_and_run.sh python3 -m uvicorn main:app --host 0.0.0.0 --port 8001
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
