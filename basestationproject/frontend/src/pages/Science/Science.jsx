@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import axios from "axios";
 import VideoFeedCard from "components/VideoFeedCard/VideoFeedCard";
 import { getApiBase } from "../../config";
@@ -15,14 +15,14 @@ export default function Science() {
     spectrophotometer: [],
     heating_on: false,
     cooling_on: false,
-    nir_on: false,
-    drill_state: "stopped",
-    linear_actuator_state: "stopped",
-    servo_angle: 90,
+    linear_actuator_speed: 0,
   });
-  const [controlPending, setControlPending] = useState(false);
 
-  // Poll science feedback every 500 ms
+  const feedbackRef = useRef(feedback);
+  feedbackRef.current = feedback;
+
+  const [nirDemo, setNirDemo] = useState({ status: "idle", message: "", detail: "" });
+
   useEffect(() => {
     let isMounted = true;
     const fetchFeedback = async () => {
@@ -43,47 +43,96 @@ export default function Science() {
     };
     fetchFeedback();
     const interval = setInterval(fetchFeedback, 500);
-    return () => {
-      isMounted = false;
-      clearInterval(interval);
-    };
+    return () => { isMounted = false; clearInterval(interval); };
   }, [API_BASE]);
 
   const sendControl = useCallback(
     async (payload) => {
-      if (controlPending) return;
-      setControlPending(true);
       try {
         await axios.post(`${API_BASE}/science-control/`, payload);
       } catch (err) {
         console.error("Failed to send science control:", err.message);
-      } finally {
-        setControlPending(false);
       }
     },
-    [API_BASE, controlPending]
+    [API_BASE]
   );
 
-  const handleDrill = (cmd) => () => sendControl({ drill: cmd });
-  const handleLinearActuator = (cmd) => () => sendControl({ linear_actuator: cmd });
-  const handleHeating = () => sendControl({ heating_on: !feedback.heating_on });
-  const handleCooling = () => sendControl({ cooling_on: !feedback.cooling_on });
-  const handleNir = () => sendControl({ nir_on: !feedback.nir_on });
-  const handleServo = (e) => {
-    const val = parseInt(e.target.value, 10);
-    setFeedback((prev) => ({ ...prev, servo_angle: val }));
-    sendControl({ servo_angle: val });
-  };
+  const handleLinearActuator = (speed) => () => sendControl({ linear_actuator_speed: speed });
+  const handleHeating = () => sendControl({ heating: !feedback.heating_on });
+  const handleCooling = () => sendControl({ cooling: !feedback.cooling_on });
+
+  const runNirServoDemo = useCallback(async () => {
+    setNirDemo({ status: "running", message: "Running NIR servo routine…", detail: "" });
+    try {
+      const { data } = await axios.post(`${API_BASE}/nir-servo-demo/`, {});
+      if (data.ok) {
+        setNirDemo({
+          status: "success",
+          message: data.message || "NIR servo routine finished.",
+          detail: (data.stdout || "").trim(),
+        });
+      } else {
+        setNirDemo({
+          status: "error",
+          message: data.message || data.error || "NIR servo script failed.",
+          detail: [data.stderr, data.stdout].filter(Boolean).join("\n\n").trim(),
+        });
+      }
+    } catch (err) {
+      const d = err.response?.data;
+      setNirDemo({
+        status: "error",
+        message: d?.error || d?.message || err.message || "Could not run NIR servo demo.",
+        detail: [d?.stderr, d?.stdout].filter(Boolean).join("\n\n").trim(),
+      });
+    }
+  }, [API_BASE]);
+
+  // Gamepad: D-pad → linear actuator speed, A → heating toggle, B → cooling toggle
+  const prevBtnsRef = useRef({ a: false, b: false });
+  const lastSpeedRef = useRef(0);
+
+  useEffect(() => {
+    const poll = () => {
+      const gp = navigator.getGamepads?.()?.[0];
+      if (!gp) return;
+
+      const up = gp.buttons[12]?.pressed;
+      const down = gp.buttons[13]?.pressed;
+      let speed = 0;
+      if (up && !down) speed = 100;
+      else if (down && !up) speed = -100;
+      if (speed !== lastSpeedRef.current) {
+        lastSpeedRef.current = speed;
+        sendControl({ linear_actuator_speed: speed });
+      }
+
+      const aPressed = gp.buttons[0]?.pressed ?? false;
+      if (aPressed && !prevBtnsRef.current.a) {
+        sendControl({ heating: !feedbackRef.current.heating_on });
+      }
+      prevBtnsRef.current.a = aPressed;
+
+      const bPressed = gp.buttons[1]?.pressed ?? false;
+      if (bPressed && !prevBtnsRef.current.b) {
+        sendControl({ cooling: !feedbackRef.current.cooling_on });
+      }
+      prevBtnsRef.current.b = bPressed;
+    };
+
+    const interval = setInterval(poll, 100);
+    return () => clearInterval(interval);
+  }, [sendControl]);
 
   const temps = Array.isArray(feedback.temperatures) ? feedback.temperatures : [];
   const spec = Array.isArray(feedback.spectrophotometer) ? feedback.spectrophotometer : [];
 
   return (
-    <div className="Science">
+    <div className="sciencePage Science">
       <h1 className="Science-title">Science Payload</h1>
 
       <div className="Science-grid">
-        {/* Camera - top left */}
+        {/* Camera */}
         <div className="card Science-card Science-card-camera">
           <div className="card-header Science-card-header">Camera</div>
           <div className="card-body p-0">
@@ -91,69 +140,29 @@ export default function Science() {
           </div>
         </div>
 
-        {/* Drill control */}
-        <div className="card Science-card">
-          <div className="card-header Science-card-header">Drill</div>
-          <div className="card-body">
-            <div className="Science-btn-group">
-              <button
-                className="btn btn-outline-primary"
-                onClick={handleDrill("left")}
-                disabled={controlPending}
-              >
-                Left
-              </button>
-              <button
-                className="btn btn-outline-warning"
-                onClick={handleDrill("stopped")}
-                disabled={controlPending}
-              >
-                Stop
-              </button>
-              <button
-                className="btn btn-outline-primary"
-                onClick={handleDrill("right")}
-                disabled={controlPending}
-              >
-                Right
-              </button>
-            </div>
-            <small className="text-muted">State: {feedback.drill_state}</small>
-          </div>
-        </div>
-
-        {/* Linear actuator control */}
+        {/* Linear Actuator */}
         <div className="card Science-card">
           <div className="card-header Science-card-header">Linear Actuator</div>
           <div className="card-body">
             <div className="Science-btn-group">
-              <button
-                className="btn btn-outline-primary"
-                onClick={handleLinearActuator("up")}
-                disabled={controlPending}
-              >
-                Up
+              <button className="btn btn-outline-primary" onClick={handleLinearActuator(100)}>
+                Up (+100)
               </button>
-              <button
-                className="btn btn-outline-warning"
-                onClick={handleLinearActuator("stop")}
-                disabled={controlPending}
-              >
+              <button className="btn btn-outline-warning" onClick={handleLinearActuator(0)}>
                 Stop
               </button>
-              <button
-                className="btn btn-outline-primary"
-                onClick={handleLinearActuator("down")}
-                disabled={controlPending}
-              >
-                Down
+              <button className="btn btn-outline-primary" onClick={handleLinearActuator(-100)}>
+                Down (-100)
               </button>
             </div>
-            <small className="text-muted">State: {feedback.linear_actuator_state}</small>
+            <small className="text-muted">
+              Speed: {feedback.linear_actuator_speed ?? 0}
+              <span className="ms-2 text-secondary">D-pad</span>
+            </small>
           </div>
         </div>
 
-        {/* Temperatures (3–5 thermistors) */}
+        {/* Temperatures */}
         <div className="card Science-card">
           <div className="card-header Science-card-header">Temperatures</div>
           <div className="card-body Science-temps">
@@ -166,24 +175,23 @@ export default function Science() {
           </div>
         </div>
 
-        {/* Heating / Cooling */}
+        {/* Heating & Cooling */}
         <div className="card Science-card">
           <div className="card-header Science-card-header">Heating & Cooling</div>
           <div className="card-body Science-toggles">
             <button
               className={`btn ${feedback.heating_on ? "btn-danger" : "btn-outline-secondary"}`}
               onClick={handleHeating}
-              disabled={controlPending}
             >
               Heating {feedback.heating_on ? "ON" : "OFF"}
             </button>
             <button
               className={`btn ${feedback.cooling_on ? "btn-info" : "btn-outline-secondary"}`}
               onClick={handleCooling}
-              disabled={controlPending}
             >
               Cooling {feedback.cooling_on ? "ON" : "OFF"}
             </button>
+            <small className="text-muted d-block mt-1">A = Heating, B = Cooling</small>
           </div>
         </div>
 
@@ -207,33 +215,35 @@ export default function Science() {
           </div>
         </div>
 
-        {/* NIR sensor */}
+        {/* NIR Servo */}
         <div className="card Science-card">
-          <div className="card-header Science-card-header">NIR Sensor</div>
+          <div className="card-header Science-card-header">NIR Servo (Pin 15)</div>
           <div className="card-body">
+            <p className="small text-muted mb-2">PWM sweep 0% → 60% → 0%</p>
             <button
-              className={`btn ${feedback.nir_on ? "btn-success" : "btn-outline-secondary"}`}
-              onClick={handleNir}
-              disabled={controlPending}
+              type="button"
+              className="btn btn-primary btn-sm"
+              disabled={nirDemo.status === "running"}
+              onClick={runNirServoDemo}
             >
-              NIR {feedback.nir_on ? "ON" : "OFF"}
+              {nirDemo.status === "running" ? "Running…" : "Run NIR Servo"}
             </button>
-          </div>
-        </div>
-
-        {/* Servo */}
-        <div className="card Science-card">
-          <div className="card-header Science-card-header">Servo (0–180°)</div>
-          <div className="card-body">
-            <input
-              type="range"
-              min="0"
-              max="180"
-              value={feedback.servo_angle ?? 90}
-              onChange={handleServo}
-              className="form-range Science-servo-slider"
-            />
-            <span className="Science-value">{feedback.servo_angle ?? 90}°</span>
+            {nirDemo.status !== "idle" && (
+              <div
+                className={`mt-2 small ${
+                  nirDemo.status === "running"
+                    ? "text-info"
+                    : nirDemo.status === "success"
+                      ? "text-success"
+                      : "text-danger"
+                }`}
+              >
+                <div className="fw-semibold">{nirDemo.message}</div>
+                {nirDemo.detail && (
+                  <pre className="Science-demo-detail small mt-1 mb-0">{nirDemo.detail}</pre>
+                )}
+              </div>
+            )}
           </div>
         </div>
 

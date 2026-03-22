@@ -2,11 +2,46 @@ import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
 
 import IncrementalMovementCard from "components/IncrementalMovementCard/IncrementalMovementCard";
+import barStyles from "components/DrivetrainCard/DrivetrainCard.module.css";
 import { getArmApiBase } from "../../config";
+
+const DISPLAY_THROTTLE_MS = 50;
+
+function toBarPercent(value) {
+  const p = Math.round(Number(value) * 100);
+  return Math.max(-100, Math.min(100, p));
+}
+
+function VerticalBarMeter({ label, value }) {
+  const clamped = toBarPercent(value);
+  const fillH = Math.abs(clamped) * 0.5;
+  const top = clamped >= 0 ? 50 - fillH : 50;
+  return (
+    <div className={barStyles.drivebar}>
+      <div className={barStyles.value}>
+        {clamped > 0 ? `+${clamped}` : clamped}%
+      </div>
+      <div className={barStyles.wrapper}>
+        <div className={barStyles.line} />
+        <div
+          className={barStyles.fill}
+          style={{ height: `${fillH}px`, top: `${top}px` }}
+        />
+      </div>
+      <div className={barStyles.label}>{label}</div>
+    </div>
+  );
+}
 
 export default function ArmControlCompact() {
   document.title = "Arm Control";
   const ARM_API = getArmApiBase();
+
+  const [armControlEnabled, setArmControlEnabled] = useState(false);
+  const armControlEnabledRef = useRef(armControlEnabled);
+  useEffect(() => {
+    armControlEnabledRef.current = armControlEnabled;
+  }, [armControlEnabled]);
 
   const [controlMode, setControlMode] = useState("joint");
   const controlModeRef = useRef(controlMode);
@@ -19,13 +54,36 @@ export default function ArmControlCompact() {
   const deadzoneRef = useRef(deadzone);
   const button0PrevRef = useRef(false);
   const toggleControlModeRef = useRef(null);
+  const lastDisplayTsRef = useRef(0);
   useEffect(() => { eeScaleRef.current = eeScale; }, [eeScale]);
   useEffect(() => { deadzoneRef.current = deadzone; }, [deadzone]);
 
+  const [liveDisplay, setLiveDisplay] = useState({
+    connected: false,
+    mode: "joint",
+    joint: [0, 0, 0, 0, 0, 0],
+    ee: { vy: 0, vz: 0, wx: 0, j1: 0, j5: 0, j6: 0 },
+  });
+
+  useEffect(() => {
+    if (!armControlEnabled) {
+      setLiveDisplay((prev) => ({
+        ...prev,
+        joint: [0, 0, 0, 0, 0, 0],
+        ee: { vy: 0, vz: 0, wx: 0, j1: 0, j5: 0, j6: 0 },
+      }));
+    }
+  }, [armControlEnabled]);
+
   // ─── POST velocity command to FastAPI /arm/velocity ───
-  const sendVelocityCommand = async (velocities) => {
-    if (velocityRequestInFlight.current) return;
-    velocityRequestInFlight.current = true;
+  // Gamepad polls at ~100 Hz: use `stream: true` so one in-flight request at a time.
+  // UI (incremental card) omits stream so clicks are never dropped behind gamepad traffic.
+  const sendVelocityCommand = async (velocities, { stream = false } = {}) => {
+    if (!armControlEnabledRef.current) return;
+    if (stream) {
+      if (velocityRequestInFlight.current) return;
+      velocityRequestInFlight.current = true;
+    }
     try {
       const cmd = [...velocities.slice(0, 6)];
       while (cmd.length < 6) cmd.push(0);
@@ -33,15 +91,21 @@ export default function ArmControlCompact() {
     } catch (err) {
       console.error("Failed to send velocity command:", err.message);
     } finally {
-      velocityRequestInFlight.current = false;
+      if (stream) velocityRequestInFlight.current = false;
     }
   };
 
   // ─── EE command: POST to FastAPI /arm/ee ────
   const eeRequestInFlight = useRef(false);
-  const sendEECommand = async ({ linearY = 0, linearZ = 0, angularX = 0, j1 = 0, j5 = 0, j6 = 0 } = {}) => {
-    if (eeRequestInFlight.current) return;
-    eeRequestInFlight.current = true;
+  const sendEECommand = async (
+    { linearY = 0, linearZ = 0, angularX = 0, j1 = 0, j5 = 0, j6 = 0 } = {},
+    { stream = false } = {}
+  ) => {
+    if (!armControlEnabledRef.current) return;
+    if (stream) {
+      if (eeRequestInFlight.current) return;
+      eeRequestInFlight.current = true;
+    }
     try {
       await axios.post(`${ARM_API}/ee`, {
         linear_y: linearY,
@@ -54,12 +118,13 @@ export default function ArmControlCompact() {
     } catch (err) {
       console.error("Failed to send EE command:", err.message);
     } finally {
-      eeRequestInFlight.current = false;
+      if (stream) eeRequestInFlight.current = false;
     }
   };
 
   // ─── Toggle joint / EE mode via FastAPI /arm/mode ────────────────────────────────
   const toggleControlMode = async () => {
+    if (!armControlEnabledRef.current) return;
     const next = controlModeRef.current === "joint" ? "ee" : "joint";
     try {
       await axios.post(`${ARM_API}/mode`, { mode: next });
@@ -110,14 +175,41 @@ export default function ArmControlCompact() {
       };
 
       const gp = navigator.getGamepads()[0];
-      if (!gp) return;
+      const now = Date.now();
+      const flushLive = (payload) => {
+        if (now - lastDisplayTsRef.current < DISPLAY_THROTTLE_MS) return;
+        lastDisplayTsRef.current = now;
+        setLiveDisplay(payload);
+      };
+
+      if (!gp) {
+        flushLive({
+          connected: false,
+          mode: controlModeRef.current,
+          joint: [0, 0, 0, 0, 0, 0],
+          ee: { vy: 0, vz: 0, wx: 0, j1: 0, j5: 0, j6: 0 },
+        });
+        return;
+      }
 
       const b0 = gp.buttons[0]?.pressed ?? false;
       if (b0 && !button0PrevRef.current) {
         button0PrevRef.current = true;
-        toggleControlModeRef.current?.();
+        if (armControlEnabledRef.current) {
+          toggleControlModeRef.current?.();
+        }
       } else if (!b0) {
         button0PrevRef.current = false;
+      }
+
+      if (!armControlEnabledRef.current) {
+        flushLive({
+          connected: true,
+          mode: controlModeRef.current,
+          joint: [0, 0, 0, 0, 0, 0],
+          ee: { vy: 0, vz: 0, wx: 0, j1: 0, j5: 0, j6: 0 },
+        });
+        return;
       }
 
       const axis0 = applyDead(gp.axes[0] ?? 0);
@@ -133,39 +225,84 @@ export default function ArmControlCompact() {
       const b7 = gp.buttons[7]?.pressed ? 1 : 0;
       const j6 = b6 + b7;
 
+      const mult = eeScaleRef.current / 100;
       if (controlModeRef.current === "ee") {
-        const mult = eeScaleRef.current / 100;
-        sendEECommand({
-          linearY: axis1 * mult,
-          linearZ: -axis3 * mult,
-          angularX: axis2 * mult,
-          j1: -axis0 * mult,
-          j5,
-          j6,
+        flushLive({
+          connected: true,
+          mode: "ee",
+          joint: [0, 0, 0, 0, 0, 0],
+          ee: {
+            vy: axis1 * mult,
+            vz: -axis3 * mult,
+            wx: axis2 * mult,
+            j1: -axis0 * mult,
+            j5,
+            j6,
+          },
         });
+        sendEECommand(
+          {
+            linearY: axis1 * mult,
+            linearZ: -axis3 * mult,
+            angularX: axis2 * mult,
+            j1: -axis0 * mult,
+            j5,
+            j6,
+          },
+          { stream: true }
+        );
       } else {
-        sendVelocityCommand([-axis0, -axis1, -axis3, axis2, j5, j6]);
+        flushLive({
+          connected: true,
+          mode: "joint",
+          joint: [-axis0, -axis1, -axis3, axis2, j5, j6],
+          ee: { vy: 0, vz: 0, wx: 0, j1: 0, j5: 0, j6: 0 },
+        });
+        sendVelocityCommand([-axis0, -axis1, -axis3, axis2, j5, j6], { stream: true });
       }
     };
 
-    const id = setInterval(pollGamepad, 50);
+    const id = setInterval(pollGamepad, 10);
     return () => clearInterval(id);
   }, []);
 
   return (
     <div className="container-fluid px-3 py-4">
-      <div className="row justify-content-center">
-        <div className="col-12 col-md-8 col-lg-6">
+      <div className="row gx-2 gx-lg-3 gy-3 gy-lg-2 align-items-start">
+        <div className="col-12 col-lg-5 col-xl-4">
           <div className="d-flex flex-column gap-3">
+            <div className="card p-3 w-100">
+              <h6 className="mb-2 header">Arm control</h6>
+              <div className="form-check form-switch">
+                <input
+                  className="form-check-input"
+                  type="checkbox"
+                  role="switch"
+                  id="armControlSwitch"
+                  checked={armControlEnabled}
+                  onChange={() => setArmControlEnabled((v) => !v)}
+                  aria-checked={armControlEnabled}
+                />
+                <label className="form-check-label" htmlFor="armControlSwitch">
+                  {armControlEnabled ? "Arm control active" : "Arm control disabled"}
+                  <span className="d-block small text-secondary mt-1">
+                    When disabled, no arm motion commands are sent to the backend.
+                  </span>
+                </label>
+              </div>
+            </div>
+
             <button
+              type="button"
               className={`btn w-100 ${controlMode === "joint" ? "btn-info" : "btn-warning"}`}
               onClick={toggleControlMode}
+              disabled={!armControlEnabled}
             >
               Mode: {controlMode === "joint" ? "Joint" : "End-Effector"}
             </button>
 
-            <div className="card p-3">
-              <h6 className="mb-3">Controller settings</h6>
+            <div className="card p-3 w-100">
+              <h6 className="mb-3 header">Controller settings</h6>
               <div className="mb-3">
                 <label className="form-label small mb-1">
                   Deadzone: {deadzone.toFixed(2)}
@@ -195,8 +332,47 @@ export default function ArmControlCompact() {
                 />
               </div>
             </div>
+          </div>
+        </div>
 
-            <IncrementalMovementCard mode={controlMode} onIncrement={handleSimIncrement} />
+        <div className="col-12 col-lg-7 col-xl-8">
+          <div className="d-flex flex-column gap-3">
+            <div className="card p-3 w-100">
+              <h5 className="text-center mb-2 header">Arm command</h5>
+              <p className="text-center small text-secondary mb-3">
+                {!liveDisplay.connected
+                  ? "No gamepad"
+                  : !armControlEnabled
+                    ? "Gamepad (not sent — arm control off)"
+                    : "Gamepad"}
+              </p>
+              <div className="d-flex justify-content-around flex-wrap gap-2">
+                {liveDisplay.mode === "joint"
+                  ? liveDisplay.joint.map((v, i) => (
+                      <VerticalBarMeter
+                        key={`j${i + 1}`}
+                        label={`J${i + 1}`}
+                        value={v}
+                      />
+                    ))
+                  : [
+                      ["Vy", liveDisplay.ee.vy],
+                      ["Vz", liveDisplay.ee.vz],
+                      ["Wx", liveDisplay.ee.wx],
+                      ["J1", liveDisplay.ee.j1],
+                      ["J5", liveDisplay.ee.j5],
+                      ["J6", liveDisplay.ee.j6],
+                    ].map(([label, v]) => (
+                      <VerticalBarMeter key={label} label={label} value={v} />
+                    ))}
+              </div>
+            </div>
+
+            <IncrementalMovementCard
+              mode={controlMode}
+              onIncrement={handleSimIncrement}
+              disabled={!armControlEnabled}
+            />
 
             <p className="text-muted small text-center mb-0">
               Gamepad: Left stick → J1/J2, Right stick X/Y → J3/J4. LB/RB → J5. b6 → J6. Button 0 → Mode.

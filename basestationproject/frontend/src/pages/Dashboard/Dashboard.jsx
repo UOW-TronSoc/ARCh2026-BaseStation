@@ -57,11 +57,17 @@ export default function Dashboard() {
 
   const batteryInfo = useBattery();
 
+  /** idle | running | success | error — feedback from POST /api/servo-demo/ */
+  const [servoDemo, setServoDemo] = useState({
+    status: "idle",
+    message: "",
+    detail: "",
+  });
+
   const [linkLatencyMs, setLinkLatencyMs] = useState(null);
   const [linkClientIp, setLinkClientIp] = useState(null);
 
-  const [speed, setSpeed] = useState(100);
-  const [speedEnabled, setSpeedEnabled] = useState(true);
+  const [driveEnabled, setDriveEnabled] = useState(false);
 
   const [keyboardLinear, setKeyboardLinear] = useState({ ...ZERO_VECTOR });
   const [keyboardAngular, setKeyboardAngular] = useState({ ...ZERO_VECTOR });
@@ -74,14 +80,9 @@ export default function Dashboard() {
   });
 
   const pressedKeysRef = useRef(new Set());
-  const speedRef = useRef(speed);
-  const lastSentTwistRef = useRef({
-    linear: { ...ZERO_VECTOR },
-    angular: { ...ZERO_VECTOR },
-  });
 
   const recalcKeyboardTwist = useCallback(() => {
-    const scale = (speedRef.current / 100) * MAX_TWIST;
+    const scale = MAX_TWIST;
     const keys = pressedKeysRef.current;
 
     const nextLinear = { ...ZERO_VECTOR };
@@ -114,6 +115,39 @@ export default function Dashboard() {
   /* ------------------------------------------------------------------ */
   /*  REST fetchers (link-latency) — battery via BatteryContext         */
   /* ------------------------------------------------------------------ */
+  const runServoDemo = useCallback(async () => {
+    setServoDemo({
+      status: "running",
+      message: "Running servo routine on rover…",
+      detail: "",
+    });
+    try {
+      const { data } = await axios.post(`${getApiBase()}/servo-demo/`, {});
+      if (data.ok) {
+        setServoDemo({
+          status: "success",
+          message: data.message || "Servo routine finished.",
+          detail: (data.stdout || "").trim(),
+        });
+      } else {
+        setServoDemo({
+          status: "error",
+          message: data.message || data.error || "Servo script reported failure.",
+          detail: [data.stderr, data.stdout].filter(Boolean).join("\n\n").trim(),
+        });
+      }
+    } catch (err) {
+      const d = err.response?.data;
+      const msg =
+        d?.error ||
+        d?.message ||
+        err.message ||
+        "Could not run servo demo.";
+      const detail = [d?.stderr, d?.stdout].filter(Boolean).join("\n\n").trim();
+      setServoDemo({ status: "error", message: msg, detail });
+    }
+  }, []);
+
   const fetchLinkLatency = async () => {
     try {
       const t0 = performance.now();
@@ -129,11 +163,6 @@ export default function Dashboard() {
   };
 
   const LINK_LATENCY_MS = 3000;   // ~0.33 Hz — antenna RTT (when enabled)
-
-  useEffect(() => {
-    speedRef.current = speed;
-    recalcKeyboardTwist();
-  }, [speed, recalcKeyboardTwist]);
 
   useEffect(() => {
     const handleKeyDown = (event) => {
@@ -203,14 +232,14 @@ export default function Dashboard() {
 
       const controllerType = identifyControllerType(gp.id);
 
-      if (!speedEnabled) {
+      if (!driveEnabled) {
         updateControllerInfo({ name: gp.id || "Unknown Controller", type: controllerType, throttle: 0 });
         setGamepadLinear((prev) => (vectorsAlmostEqual(prev, ZERO_VECTOR) ? prev : { ...ZERO_VECTOR }));
         setGamepadAngular((prev) => (vectorsAlmostEqual(prev, ZERO_VECTOR) ? prev : { ...ZERO_VECTOR }));
         return;
       }
 
-      const baseScale = (speedRef.current / 100) * MAX_TWIST;
+      const baseScale = MAX_TWIST;
 
       let throttle = 1;
       let nextLinear = { ...ZERO_VECTOR };
@@ -267,7 +296,7 @@ export default function Dashboard() {
 
     const interval = setInterval(pollGamepad, 50);
     return () => clearInterval(interval);
-  }, [speedEnabled, updateControllerInfo]);
+  }, [driveEnabled, updateControllerInfo]);
 
   const combinedLinear = useMemo(
     () => ({
@@ -289,7 +318,7 @@ export default function Dashboard() {
 
   const effectiveTwist = useMemo(
     () => (
-      speedEnabled
+      driveEnabled
         ? {
             linear: { ...combinedLinear },
             angular: { ...combinedAngular },
@@ -299,31 +328,27 @@ export default function Dashboard() {
             angular: { ...ZERO_VECTOR },
           }
     ),
-    [combinedLinear, combinedAngular, speedEnabled]
+    [combinedLinear, combinedAngular, driveEnabled]
   );
 
-  // Send drivetrain commands continuously at fixed rate (60Hz)
+  // Send drivetrain commands at ~60 Hz only while drive is enabled (no backend traffic when off)
   useEffect(() => {
+    if (!driveEnabled) return undefined;
+
     const sendInterval = setInterval(() => {
       const payload = {
         linear: { ...effectiveTwist.linear },
         angular: { ...effectiveTwist.angular },
       };
 
-      // Always send to maintain continuous command stream
-      lastSentTwistRef.current = {
-        linear: { ...payload.linear },
-        angular: { ...payload.angular },
-      };
-
       sendTwistCommand(payload);
-    }, 16); // Send at 60Hz (~16.67ms interval, rounded to 16ms)
+    }, 16);
 
     return () => clearInterval(sendInterval);
-  }, [effectiveTwist, sendTwistCommand]);
+  }, [driveEnabled, effectiveTwist, sendTwistCommand]);
 
   /* ---------------------------------------------------------------------------------- */
-  /* (VideoFeedCard, DataDisplayCard, VideoFeedCard, DrivetrainCard, SpeedControlCard ) */
+  /* (VideoFeedCard, DataDisplayCard, DrivetrainCard, SpeedControlCard + servo) */
   /* ---------------------------------------------------------------------------------- */
   return (
     <div className="dashboardPage">
@@ -368,12 +393,42 @@ export default function Dashboard() {
           </div>
           <div className="col-lg-3">
             <SpeedControlCard
-              speed={speed}
-              setSpeed={setSpeed}
-              enabled={speedEnabled}
-              setEnabled={setSpeedEnabled}
+              enabled={driveEnabled}
+              setEnabled={setDriveEnabled}
               controllerInfo={controllerInfo}
-            />
+            >
+              <div className="servoDemoCardInner">
+                <div className="header small text-uppercase mb-2">Servo Activation</div>
+                <p className="small text-secondary mb-2 mb-lg-3">
+                  <code className="small">Takes several seconds.</code>
+                </p>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  disabled={servoDemo.status === "running"}
+                  onClick={runServoDemo}
+                >
+                  {servoDemo.status === "running" ? "Running…" : "Roo release"}
+                </button>
+                {servoDemo.status !== "idle" && (
+                  <div
+                    className={`servoDemoFeedback mt-2 small ${
+                      servoDemo.status === "running"
+                        ? "text-info"
+                        : servoDemo.status === "success"
+                          ? "text-success"
+                          : "text-danger"
+                    }`}
+                    role="status"
+                  >
+                    <div className="fw-semibold">{servoDemo.message}</div>
+                    {servoDemo.detail ? (
+                      <pre className="servoDemoDetail small mt-1 mb-0">{servoDemo.detail}</pre>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            </SpeedControlCard>
           </div>
         </div>
       </div>

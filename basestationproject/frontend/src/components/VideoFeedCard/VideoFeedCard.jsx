@@ -77,8 +77,8 @@ const VideoFeedCard = ({ api }) => {
   }, [requestNextFrame]);
 
   return (
-    <div className={`card bg-transparent rounded-3 p-0`}>
-      <div className="card-header p-0 position-relative border-0 bg-transparent overflow-hidden">
+    <div className={`card bg-transparent rounded-3 p-0 ${styles.videoFeedCard}`}>
+      <div className="card-header p-0 position-relative border-0 bg-transparent">
         {/* Video */}
         <div className="ratio ratio-16x9 overflow-hidden rounded-3">
           <img
@@ -94,7 +94,7 @@ const VideoFeedCard = ({ api }) => {
         {/* Live Badge */}
         {live && feedEnabled && (
           <span
-            className={`${styles.badge} badge bg-danger position-absolute top-0 start-0 mt-3 ms-3`}
+            className={`${styles.badge} badge bg-warning text-dark position-absolute top-0 start-0 mt-3 ms-3`}
           >
             Live
           </span>
@@ -129,7 +129,7 @@ const VideoFeedCard = ({ api }) => {
         {/* Start/Stop Feed Button */}
         <div className="position-absolute bottom-0 start-0 mb-3 ms-3">
           <button
-            className="btn btn-sm btn-outline-warning"
+            className="btn btn-sm btn-outline-light"
             onClick={() => setFeedEnabled(prev => !prev)}
           >
             {feedEnabled ? "Stop Feed" : "Start Feed"}

@@ -57,7 +57,8 @@ html, body {
 .cameraPage,
 .checklistPage,
 .logViewerPage,
-.scriptManagerPage {
+.scriptManagerPage,
+.sciencePage {
   width: 100%;
   max-width: 100%;
 }

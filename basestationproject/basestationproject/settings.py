@@ -79,40 +79,15 @@ WSGI_APPLICATION = 'basestationproject.wsgi.application'
 
 
 CSRF_TRUSTED_ORIGINS = [
-  'http://localhost:3000',
-  'http://127.0.0.1:3000',
-  'http://localhost:5173',
-  'http://127.0.0.1:5173',
-  'http://10.0.0.2:3000',
-  'http://10.0.0.69:3000',
-  'http://10.0.0.67:3000',
-  'http://10.0.0.2:5173',
-  'http://10.0.0.1:5173',
-  'http://10.0.0.1:3000',
-  'http://10.42.0.11:3000',
-  'http://10.42.0.11:5173',
-  'http://10.153.87.4:5173',
-  'http://10.153.87.4:3000',
+    'http://10.0.0.1:8000',
+    'http://10.0.0.2:8000',
+    'http://127.0.0.1:8000',
+    'http://localhost:8000',
 ]
 
-# When credentials are included, Access-Control-Allow-Origin cannot be '*'.
-# Use explicit origins instead of CORS_ALLOW_ALL_ORIGINS.
-CORS_ALLOW_ALL_ORIGINS = False
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://10.0.0.2:3000",
-    "http://10.0.0.2:5173",
-    "http://10.0.0.1:5173",
-    "http://10.42.0.11:3000",
-    "http://10.42.0.11:5173",
-    "http://10.153.87.4:5173",
-    "http://10.153.87.4:3000",
-    'http://10.0.0.69:3000',
-    'http://10.0.0.67:3000',
-]
+# Allow any browser origin. With CORS_ALLOW_CREDENTIALS, django-cors-headers
+# echoes the request Origin (never sends '*'), which browsers accept.
+CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
 
 # Session cookie: httpOnly (not readable by JS), long expiry

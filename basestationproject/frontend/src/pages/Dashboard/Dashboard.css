@@ -32,6 +32,21 @@ body{ background:var(--bg-page); }
   flex-shrink: 0;
 }
 
+.servoDemoCardInner code {
+  color: inherit;
+  word-break: break-all;
+}
+
+.servoDemoDetail {
+  max-height: 10rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: var(--radius-md, 6px);
+  padding: 0.5rem;
+}
+
 /* ───────────────── shared card styling ───────────────── */
 .card {
   background: var(--card-alt-bg);

@@ -1,7 +1,9 @@
 .Science {
-  padding: var(--space-lg);
-  max-width: 1400px;
-  margin: 0 auto;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  box-sizing: border-box;
+  padding: var(--space-lg) var(--space-md);
 }
 
 .Science-title {
@@ -18,11 +20,10 @@
   grid-template-rows: auto auto auto;
   gap: var(--space-md);
   grid-template-areas:
-    "camera drill"
     "camera linear"
-    "temps heating"
-    "ultrasonic current"
-    "nir servo"
+    "camera temps"
+    "heating ultrasonic"
+    "current nir"
     "spec spec";
 }
 
@@ -34,28 +35,22 @@
 
 /* Explicit grid areas for controls */
 .Science-card:nth-child(2) {
-  grid-area: drill;
-}
-.Science-card:nth-child(3) {
   grid-area: linear;
 }
-.Science-card:nth-child(4) {
+.Science-card:nth-child(3) {
   grid-area: temps;
 }
-.Science-card:nth-child(5) {
+.Science-card:nth-child(4) {
   grid-area: heating;
 }
-.Science-card:nth-child(6) {
+.Science-card:nth-child(5) {
   grid-area: ultrasonic;
 }
-.Science-card:nth-child(7) {
+.Science-card:nth-child(6) {
   grid-area: current;
 }
-.Science-card:nth-child(8) {
+.Science-card:nth-child(7) {
   grid-area: nir;
-}
-.Science-card:nth-child(9) {
-  grid-area: servo;
 }
 .Science-card-spec {
   grid-area: spec;
@@ -73,6 +68,11 @@
 .Science-card:hover {
   border-color: rgba(248, 206, 77, 0.2);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+/* Camera card: allow VideoFeedCard dropdown to paint outside the card (overflow:hidden clips menus). */
+.Science-card.Science-card-camera {
+  overflow: visible;
 }
 
 .Science-card-header {
@@ -129,6 +129,13 @@
   margin-bottom: var(--space-sm);
 }
 
+.Science-demo-detail {
+  max-height: 80px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 .Science-spec-grid {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
@@ -148,10 +155,9 @@
   .Science-grid {
     grid-template-columns: 1.2fr 1fr 1fr;
     grid-template-areas:
-      "camera drill linear"
-      "camera temps heating"
-      "camera ultrasonic current"
-      "camera nir servo"
+      "camera linear temps"
+      "camera heating ultrasonic"
+      "camera current nir"
       "spec spec spec";
   }
 
@@ -186,9 +192,7 @@
   .Science-card:nth-child(5),
   .Science-card:nth-child(6),
   .Science-card:nth-child(7),
-  .Science-card:nth-child(8),
-  .Science-card:nth-child(9),
-  .Science-card:nth-child(10) {
+  .Science-card:nth-child(8) {
     grid-area: unset;
   }
 

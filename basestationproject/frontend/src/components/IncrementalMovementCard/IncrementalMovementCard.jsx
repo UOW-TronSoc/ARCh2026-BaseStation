@@ -5,7 +5,7 @@ const JOINT_TARGETS = ["Theta1", "Theta2", "Theta3", "Theta4", "Theta5"];
 const EE_TARGETS = ["Vy", "Vz", "Pitch"];
 const QUICK_VELS = [5, 10, 20];
 
-export default function IncrementalMovementCard({ mode = "joint", onIncrement }) {
+export default function IncrementalMovementCard({ mode = "joint", onIncrement, disabled = false }) {
   const [selected, setSelected] = useState(null);
   const [value, setValue] = useState("");
 
@@ -18,12 +18,12 @@ export default function IncrementalMovementCard({ mode = "joint", onIncrement })
   }, [mode]);
 
   const sendVelocity = (vel) => {
-    if (!selected || !onIncrement) return;
+    if (disabled || !selected || !onIncrement) return;
     onIncrement(mode, selected, vel);
   };
 
   const handleSend = () => {
-    if (!selected || value === "") return;
+    if (disabled || !selected || value === "") return;
 
     const numericValue = parseFloat(value);
     if (isNaN(numericValue) || numericValue < -100 || numericValue > 100) {
@@ -53,9 +53,11 @@ export default function IncrementalMovementCard({ mode = "joint", onIncrement })
         {targets.map((t) => (
           <button
             key={t}
+            type="button"
             className={`btn ${
               selected === t ? styles.selectedButton : styles.targetButton
             }`}
+            disabled={disabled}
             onClick={() => setSelected(t)}
           >
             {formatLabel(t)}
@@ -68,14 +70,18 @@ export default function IncrementalMovementCard({ mode = "joint", onIncrement })
           {QUICK_VELS.flatMap((v) => [
             <button
               key={`-${v}`}
+              type="button"
               className="btn btn-outline-secondary btn-sm"
+              disabled={disabled}
               onClick={() => sendVelocity(-v)}
             >
               -{v}
             </button>,
             <button
               key={`+${v}`}
+              type="button"
               className="btn btn-outline-primary btn-sm"
+              disabled={disabled}
               onClick={() => sendVelocity(v)}
             >
               +{v}
@@ -91,12 +97,13 @@ export default function IncrementalMovementCard({ mode = "joint", onIncrement })
           placeholder={isEE ? "Value (-100 to 100)" : "Velocity deg/s (-100 to 100)"}
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          disabled={!selected}
+          disabled={disabled || !selected}
         />
         <button
+          type="button"
           className="btn btn-primary"
           onClick={handleSend}
-          disabled={!selected || value === ""}
+          disabled={disabled || !selected || value === ""}
         >
           Send
         </button>

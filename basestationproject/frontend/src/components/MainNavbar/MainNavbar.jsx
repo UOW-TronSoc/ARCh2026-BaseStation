@@ -1,8 +1,12 @@
 import React, { useState, useEffect } from "react";
+import { NavLink, Link } from "react-router-dom";
 import logo from "assets/logo.png";
 import './MainNavbar.css';
 import { getBackendBase } from "../../config";
 import { useBattery } from "context/BatteryContext";
+
+const navLinkClass = ({ isActive }) =>
+  `nav-link${isActive ? " active" : ""}`;
 
 export default function MainNavbar() {
   const [backendConnected, setBackendConnected] = useState(null);
@@ -88,12 +92,28 @@ export default function MainNavbar() {
               </div>
             </li>
 
-            {/* Home link */}
             <li className="nav-item">
-              <a className="nav-link active" href="/">Home</a>
+              <NavLink className={navLinkClass} end to="/">
+                Home
+              </NavLink>
+            </li>
+            <li className="nav-item">
+              <NavLink className={navLinkClass} to="/control">
+                Arm Control
+              </NavLink>
+            </li>
+            <li className="nav-item">
+              <NavLink className={navLinkClass} to="/cameras">
+                Cameras
+              </NavLink>
+            </li>
+            <li className="nav-item">
+              <NavLink className={navLinkClass} to="/science">
+                Science
+              </NavLink>
             </li>
 
-            {/* Control Pages dropdown */}
+            {/* Control Pages dropdown (remaining tools) */}
             <li className="nav-item dropdown">
               <a
                 className="nav-link dropdown-toggle"
@@ -107,35 +127,32 @@ export default function MainNavbar() {
               </a>
               <ul className="dropdown-menu dropdown-menu-end" aria-labelledby="controlDropdown">
                 <li>
-                  <a className="dropdown-item" href="/control/">Arm Control</a>
+                  <Link className="dropdown-item" to="/script-manager">
+                    Process Manager
+                  </Link>
                 </li>
                 <li>
-                  <a className="dropdown-item" href="/dashboard/">Dashboard</a>
+                  <Link className="dropdown-item" to="/logs">
+                    Logs
+                  </Link>
                 </li>
                 <li>
-                  <a className="dropdown-item" href="/script-manager/">Process Manager</a>
+                  <Link className="dropdown-item" to="/checklist">
+                    Checklist
+                  </Link>
                 </li>
                 <li>
-                  <a className="dropdown-item" href="/cameras/">Cameras</a>
-                </li>
-                <li>
-                  <a className="dropdown-item" href="/logs/">Logs</a>
-                </li>
-                <li>
-                  <a className="dropdown-item" href="/checklist/">Checklist</a>
-                </li>
-                <li>
-                  <a className="dropdown-item" href="/automap/">AutoMap</a>
-                </li>
-                <li>
-                  <a className="dropdown-item" href="/science/">Science</a>
+                  <Link className="dropdown-item" to="/automap">
+                    AutoMap
+                  </Link>
                 </li>
               </ul>
             </li>
 
-            {/* Telemetry link */}
             <li className="nav-item">
-              <a className="nav-link" href="/services">Telemetry</a>
+              <a className="nav-link" href="/services">
+                Telemetry
+              </a>
             </li>
           </ul>
         </div>

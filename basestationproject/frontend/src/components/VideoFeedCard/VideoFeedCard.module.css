@@ -1,2 +1,22 @@
+.badge {
+  font-weight: 600;
+}
 
-.badge{ font-weight:600; }
+/* Readable dark text on overlays + camera list menu */
+.videoFeedCard :global(.dropdown-menu) {
+  color: #000;
+}
+
+.videoFeedCard :global(.dropdown-item) {
+  color: #000 !important;
+}
+
+.videoFeedCard :global(.dropdown-item:hover),
+.videoFeedCard :global(.dropdown-item:focus) {
+  color: #000 !important;
+}
+
+.videoFeedCard :global(.dropdown-item.active),
+.videoFeedCard :global(.dropdown-item:active) {
+  color: #000 !important;
+}

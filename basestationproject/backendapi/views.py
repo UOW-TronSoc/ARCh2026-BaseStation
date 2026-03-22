@@ -1,7 +1,7 @@
 # Django Imports
 from django.http import JsonResponse, StreamingHttpResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_GET, require_POST
 from django.views.decorators import gzip
 from django.shortcuts import render
 from django.core.cache import cache
@@ -21,33 +21,29 @@ from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
 import logging
 
+# Core ROS packages (arm, science bridge) — do not bundle with kanga_interfaces: if that
+# workspace fails to build/source, battery breaks but arm + kanga_science must still run.
+ROS_IMPORTS_AVAILABLE = False
 try:
     from sensor_msgs.msg import JointState
-    from std_msgs.msg import String, Bool, Empty
+    from std_msgs.msg import String, Bool, Empty, Int32, Float32, Float32MultiArray
     from geometry_msgs.msg import Twist
-    from kanga_interfaces.msg import (
-        # ScienceFeedback,
-        # ScienceControl,
-        # RadioFeedback,
-        # CoreFeedback,
-        BmsStatus,
-        BatteryInfo,
-        # RoverLog,
-    )
-    try:
-        from can_msgs.msg import Frame as CanFrame
-        CAN_MSGS_AVAILABLE = True
-    except ImportError:
-        CanFrame = None
-        CAN_MSGS_AVAILABLE = False
-
     ROS_IMPORTS_AVAILABLE = True
-
 except ImportError as e:
-    ROS_IMPORTS_AVAILABLE = False
-    CAN_MSGS_AVAILABLE = False
-    CanFrame = None
-    logging.warning(f"ROS message imports failed: {e}. Some features may not work.")
+    logging.warning(
+        "ROS standard message imports failed (arm/science disabled): %s",
+        e,
+    )
+
+KANGA_INTERFACES_AVAILABLE = False
+try:
+    from kanga_interfaces.msg import BmsStatus, BatteryInfo
+    KANGA_INTERFACES_AVAILABLE = True
+except ImportError as e:
+    logging.warning(
+        "kanga_interfaces not importable (battery topics disabled): %s",
+        e,
+    )
 
 
 
@@ -656,6 +652,96 @@ def link_latency(request):
     })
 
 
+# Serialise servo demo runs — concurrent GPIO access would fail or misbehave.
+_servo_demo_lock = threading.Lock()
+
+
+@csrf_exempt
+@require_POST
+def run_servo_demo(request):
+    """
+    POST /api/servo-demo/
+    Runs scripts/servo_controller.py under the Django project root (basestation host, e.g. Jetson).
+    Returns stdout/stderr and ok flag so the dashboard can show whether it actually ran.
+    """
+    script_path = os.path.abspath(
+        os.path.join(settings.BASE_DIR, "scripts", "servo_controller.py")
+    )
+    if not os.path.isfile(script_path):
+        return JsonResponse(
+            {
+                "ok": False,
+                "error": "servo_controller.py not found",
+                "path": script_path,
+            },
+            status=404,
+        )
+
+    if not _servo_demo_lock.acquire(blocking=False):
+        return JsonResponse(
+            {
+                "ok": False,
+                "error": "Servo demo is already running; wait for it to finish.",
+            },
+            status=409,
+        )
+
+    try:
+        r = subprocess.run(
+            [sys.executable, script_path],
+            capture_output=True,
+            text=True,
+            timeout=120.0,
+            cwd=os.path.dirname(script_path),
+        )
+        out = (r.stdout or "").strip()
+        err = (r.stderr or "").strip()
+        success = r.returncode == 0
+        # Keep payloads bounded for JSON responses
+        if len(out) > 8000:
+            out = "…\n" + out[-7990:]
+        if len(err) > 4000:
+            err = "…\n" + err[-3990:]
+        return JsonResponse(
+            {
+                "ok": success,
+                "returncode": r.returncode,
+                "stdout": out,
+                "stderr": err,
+                "message": (
+                    "Servo routine finished successfully."
+                    if success
+                    else "Servo script exited with a non-zero status."
+                ),
+            }
+        )
+    except subprocess.TimeoutExpired as e:
+        o = e.stdout or ""
+        er = e.stderr or ""
+        if isinstance(o, bytes):
+            o = o.decode(errors="replace")
+        if isinstance(er, bytes):
+            er = er.decode(errors="replace")
+        o, er = o.strip(), er.strip()
+        return JsonResponse(
+            {
+                "ok": False,
+                "error": "Servo script timed out (exceeded 120s).",
+                "stdout": o[-4000:] if len(o) > 4000 else o,
+                "stderr": er[-2000:] if len(er) > 2000 else er,
+            },
+            status=504,
+        )
+    except Exception as e:
+        logging.exception("run_servo_demo failed")
+        return JsonResponse(
+            {"ok": False, "error": str(e)},
+            status=500,
+        )
+    finally:
+        _servo_demo_lock.release()
+
+
 # -----------------------------------------------------------------------------
 # Single-Frame HTTP View
 # -----------------------------------------------------------------------------
@@ -956,172 +1042,151 @@ ros_manager.add_node(feedback_node)
 
 # ----------------------------
 
-# Science CAN Subscriber / Publisher (CAN/can1/receive, CAN/can1/transmit)
+# Science: ROS2 only (no CAN). Subscribes sensor topics; publishes control topics.
 
 # ----------------------------
-# CAN protocol: 0x100 temps, 0x101 ultrasonic, 0x102 current, 0x103-0x10B spectrophotometer
-# Control TX: 0x200 (drill, linear_actuator, heating, cooling, nir, servo)
-import struct
-
-SCIENCE_CAN_RX_TOPIC = "CAN/can1/receive"
-SCIENCE_CAN_TX_TOPIC = "CAN/can1/transmit"
+# Sub (from rover / science stack): std_msgs
+#   kanga_science/temperatures        Float32MultiArray  (up to 5 values, °C)
+#   kanga_science/ultrasonic_cm       Float32
+#   kanga_science/current_amps        Float32
+#   kanga_science/spectrophotometer   Float32MultiArray  (up to 18 values)
+# Pub (from basestation UI → API): std_msgs
+#   kanga_science/linear_actuator_speed  Int32  (-255..255)
+#   kanga_science/heating                Bool
+#   kanga_science/cooling                Bool
 
 
 def _default_science_feedback():
-    """Mock data when no CAN frames received."""
+    """Fallback when the kanga_science ROS bridge node did not start."""
     return {
-        "temperatures": [22.1, 23.5, 24.0],
-        "ultrasonic_cm": 45.2,
-        "current_amps": 0.35,
-        "spectrophotometer": [0.1 + 0.05 * i for i in range(18)],
+        "temperatures": [],
+        "ultrasonic_cm": None,
+        "current_amps": None,
+        "spectrophotometer": [],
         "heating_on": False,
         "cooling_on": False,
-        "nir_on": False,
-        "drill_state": "stopped",
-        "linear_actuator_state": "stopped",
-        "servo_angle": 90,
+        "linear_actuator_speed": 0,
     }
 
 
-class ScienceCANSubscriber(Node):
-    """Subscribes to CAN/can1/receive, decodes frames into latest_science_feedback."""
+class KangaScienceBridgeNode(Node):
+    """Single node: subscribe sensor topics, publish control topics, cache for HTTP API."""
 
     def __init__(self):
-        super().__init__('science_can_subscriber')
+        super().__init__("kanga_science_bridge")
         self._lock = threading.Lock()
-        self._latest = _default_science_feedback()
-        self._last_can_time = 0
-        if CAN_MSGS_AVAILABLE and CanFrame is not None:
-            self.subscription = self.create_subscription(
-                CanFrame, SCIENCE_CAN_RX_TOPIC, self._can_callback, 10
-            )
-            self.get_logger().info(f"Subscribed to {SCIENCE_CAN_RX_TOPIC}")
-        else:
-            self.get_logger().warning("can_msgs not available, using mock data only")
+        self._sensors = {
+            "temperatures": [],
+            "ultrasonic_cm": None,
+            "current_amps": None,
+            "spectrophotometer": [],
+        }
+        self._state = {
+            "linear_actuator_speed": 0,
+            "heating_on": False,
+            "cooling_on": False,
+        }
 
-    def _can_callback(self, msg):
+        self.create_subscription(
+            Float32MultiArray, "kanga_science/temperatures", self._cb_temperatures, 10
+        )
+        self.create_subscription(
+            Float32, "kanga_science/ultrasonic_cm", self._cb_ultrasonic, 10
+        )
+        self.create_subscription(
+            Float32, "kanga_science/current_amps", self._cb_current, 10
+        )
+        self.create_subscription(
+            Float32MultiArray,
+            "kanga_science/spectrophotometer",
+            self._cb_spectrophotometer,
+            10,
+        )
+
+        self.linear_pub = self.create_publisher(Int32, "kanga_science/linear_actuator_speed", 10)
+        self.heating_pub = self.create_publisher(Bool, "kanga_science/heating", 10)
+        self.cooling_pub = self.create_publisher(Bool, "kanga_science/cooling", 10)
+
+        self.get_logger().info(
+            "kanga_science_bridge: subs temperatures, ultrasonic_cm, current_amps, spectrophotometer; "
+            "pubs linear_actuator_speed, heating, cooling"
+        )
+
+    def _cb_temperatures(self, msg: Float32MultiArray):
         try:
-            can_id = msg.id
-            data = bytes(msg.data[: msg.dlc])
+            data = list(msg.data)[:5]
             with self._lock:
-                self._last_can_time = time.time()
-                if can_id == 0x100 and len(data) >= 4:
-                    temps = []
-                    for i in range(0, min(10, len(data)), 2):
-                        if i + 2 <= len(data):
-                            val = struct.unpack_from("<h", data, i)[0] / 10.0
-                            temps.append(round(val, 1))
-                    if temps:
-                        self._latest["temperatures"] = temps[:5]
-                elif can_id == 0x101 and len(data) >= 2:
-                    self._latest["ultrasonic_cm"] = round(struct.unpack_from("<H", data, 0)[0] / 10.0, 1)
-                elif can_id == 0x102 and len(data) >= 4:
-                    self._latest["current_amps"] = round(struct.unpack_from("<f", data, 0)[0], 3)
-                elif 0x103 <= can_id <= 0x10B and len(data) >= 8:
-                    idx = (can_id - 0x103) * 2
-                    v0, v1 = struct.unpack_from("<ff", data, 0)
-                    arr = self._latest.get("spectrophotometer", [0.0] * 18)
-                    while len(arr) < 18:
-                        arr.append(0.0)
-                    arr[idx] = round(v0, 4)
-                    if idx + 1 < 18:
-                        arr[idx + 1] = round(v1, 4)
-                    self._latest["spectrophotometer"] = arr
+                self._sensors["temperatures"] = [round(float(x), 1) for x in data]
         except Exception as e:
-            self.get_logger().error(f"CAN decode error: {e}")
+            self.get_logger().error(f"temperatures callback: {e}")
+
+    def _cb_ultrasonic(self, msg: Float32):
+        try:
+            with self._lock:
+                self._sensors["ultrasonic_cm"] = round(float(msg.data), 1)
+        except Exception as e:
+            self.get_logger().error(f"ultrasonic callback: {e}")
+
+    def _cb_current(self, msg: Float32):
+        try:
+            with self._lock:
+                self._sensors["current_amps"] = round(float(msg.data), 3)
+        except Exception as e:
+            self.get_logger().error(f"current_amps callback: {e}")
+
+    def _cb_spectrophotometer(self, msg: Float32MultiArray):
+        try:
+            data = list(msg.data)[:18]
+            with self._lock:
+                self._sensors["spectrophotometer"] = [round(float(x), 4) for x in data]
+        except Exception as e:
+            self.get_logger().error(f"spectrophotometer callback: {e}")
+
+    def publish_linear_speed(self, speed):
+        speed = max(-255, min(255, int(speed)))
+        with self._lock:
+            self._state["linear_actuator_speed"] = speed
+        m = Int32()
+        m.data = speed
+        self.linear_pub.publish(m)
+
+    def publish_heating(self, on):
+        with self._lock:
+            self._state["heating_on"] = bool(on)
+        m = Bool()
+        m.data = bool(on)
+        self.heating_pub.publish(m)
+
+    def publish_cooling(self, on):
+        with self._lock:
+            self._state["cooling_on"] = bool(on)
+        m = Bool()
+        m.data = bool(on)
+        self.cooling_pub.publish(m)
 
     def get_feedback(self):
         with self._lock:
-            return dict(self._latest)
+            return {
+                "temperatures": list(self._sensors["temperatures"]),
+                "ultrasonic_cm": self._sensors["ultrasonic_cm"],
+                "current_amps": self._sensors["current_amps"],
+                "spectrophotometer": list(self._sensors["spectrophotometer"]),
+                "linear_actuator_speed": self._state["linear_actuator_speed"],
+                "heating_on": self._state["heating_on"],
+                "cooling_on": self._state["cooling_on"],
+            }
 
 
-class ScienceCANPublisher(Node):
-    """Publishes control frames to CAN/can1/transmit."""
-
-    def __init__(self):
-        super().__init__('science_can_publisher')
-        self._lock = threading.Lock()
-        self._state = {
-            "drill": "stopped",
-            "linear_actuator": "stopped",
-            "heating_on": False,
-            "cooling_on": False,
-            "nir_on": False,
-            "servo_angle": 90,
-        }
-        if CAN_MSGS_AVAILABLE and CanFrame is not None:
-            self.publisher = self.create_publisher(CanFrame, SCIENCE_CAN_TX_TOPIC, 100)
-            self.get_logger().info(f"Publishing to {SCIENCE_CAN_TX_TOPIC}")
-        else:
-            self.publisher = None
-
-    def publish_control(self, data):
-        """Encode control dict into CAN frame 0x200 and publish."""
-        with self._lock:
-            drill = data.get("drill", self._state["drill"])
-            linact = data.get("linear_actuator", self._state["linear_actuator"])
-            self._state["drill"] = drill if drill in ("left", "right", "stopped") else "stopped"
-            self._state["linear_actuator"] = linact if linact in ("up", "down", "stopped") else "stopped"
-            self._state["heating_on"] = data.get("heating_on", self._state["heating_on"])
-            self._state["cooling_on"] = data.get("cooling_on", self._state["cooling_on"])
-            self._state["nir_on"] = data.get("nir_on", self._state["nir_on"])
-            servo = int(data.get("servo_angle", self._state["servo_angle"]))
-            self._state["servo_angle"] = max(0, min(180, servo))
-
-        if self.publisher is None:
-            return
-        try:
-            msg = CanFrame()
-            msg.id = 0x200
-            msg.dlc = 8
-            msg.is_extended = False
-            msg.is_rtr = False
-            msg.is_error = False
-            drill_map = {"stopped": 0, "left": 1, "right": 2}
-            linact_map = {"stopped": 0, "up": 1, "down": 2}
-            msg.data = [
-                drill_map.get(self._state["drill"], 0),
-                linact_map.get(self._state["linear_actuator"], 0),
-                1 if self._state["heating_on"] else 0,
-                1 if self._state["cooling_on"] else 0,
-                1 if self._state["nir_on"] else 0,
-                self._state["servo_angle"] & 0xFF,
-                0,
-                0,
-            ]
-            self.publisher.publish(msg)
-        except Exception as e:
-            self.get_logger().error(f"CAN publish error: {e}")
-
-
-science_can_subscriber = None
-science_can_publisher = None
-if ROS_IMPORTS_AVAILABLE:
-    try:
-        science_can_subscriber = ScienceCANSubscriber()
-        science_can_publisher = ScienceCANPublisher()
-        ros_manager.add_node(science_can_subscriber)
-        ros_manager.add_node(science_can_publisher)
-    except Exception as e:
-        logging.warning(f"Science CAN nodes failed to init: {e}. Science page will use mock data.")
+# Registered with ros_manager after arm nodes (see below) so all bridge nodes start together.
+kanga_science_node = None
 
 
 def get_science_feedback(request):
-    """GET /api/science-feedback/ - latest science sensor data (from CAN or mock)."""
+    """GET /api/science-feedback/ — cached values from kanga_science ROS topics + last commands."""
     try:
-        fb = _default_science_feedback()
-        if science_can_subscriber is not None:
-            fb = science_can_subscriber.get_feedback()
-        # Merge last commanded actuator state from publisher
-        if science_can_publisher is not None:
-            with science_can_publisher._lock:
-                fb["drill_state"] = science_can_publisher._state["drill"]
-                fb["linear_actuator_state"] = science_can_publisher._state["linear_actuator"]
-                fb["heating_on"] = science_can_publisher._state["heating_on"]
-                fb["cooling_on"] = science_can_publisher._state["cooling_on"]
-                fb["nir_on"] = science_can_publisher._state["nir_on"]
-                fb["servo_angle"] = science_can_publisher._state["servo_angle"]
-        return JsonResponse(fb)
+        if kanga_science_node is not None:
+            return JsonResponse(kanga_science_node.get_feedback())
+        return JsonResponse(_default_science_feedback())
     except Exception as e:
         logging.error(f"Science feedback error: {e}")
         return JsonResponse(_default_science_feedback())
@@ -1129,14 +1194,19 @@ def get_science_feedback(request):
 
 @csrf_exempt
 def set_science_control(request):
-    """POST /api/science-control/ - send control commands via CAN."""
+    """POST /api/science-control/ - publish control commands to ROS2 topics."""
     if request.method != "POST":
         return JsonResponse({"error": "Invalid request method"}, status=405)
     try:
         data = json.loads(request.body)
-        if science_can_publisher is not None:
-            science_can_publisher.publish_control(data)
-        return JsonResponse({"status": "success", "message": "Science control command sent!"})
+        if kanga_science_node is not None:
+            if "linear_actuator_speed" in data:
+                kanga_science_node.publish_linear_speed(data["linear_actuator_speed"])
+            if "heating" in data:
+                kanga_science_node.publish_heating(data["heating"])
+            if "cooling" in data:
+                kanga_science_node.publish_cooling(data["cooling"])
+        return JsonResponse({"status": "success"})
     except json.JSONDecodeError as e:
         logging.error(f"Invalid JSON: {e}")
         return JsonResponse({"error": "Invalid JSON"}, status=400)
@@ -1145,72 +1215,76 @@ def set_science_control(request):
         return JsonResponse({"error": "Internal server error"}, status=500)
 
 
-# (old kanga_interfaces Science nodes removed)
-# class _ScienceFeedbackSubscriber(Node):
-#     # Subscriber to Science Feedback topic
-#     def __init__(self):
-#         super().__init__('science_feedback_subscriber')
-#         self.subscription = self.create_subscription(
-#             ScienceFeedback, '/science_feedback', self.feedback_callback, 10
-#         )
-#         self.latest_feedback = {}
-#
-#     def feedback_callback(self, msg):
-#         self.latest_feedback = {
-#             "rfid": msg.rfid,
-#             "moisture": msg.moisture,
-#             "potentiometer": msg.potentiometer,
-#             "limit": msg.limit,
-#             "height": msg.height,
-#         }
-#
-# # Science Control Publisher
-# class ScienceControlPublisher(Node):
-#     # Publisher to Science Control topic
-#     def __init__(self):
-#         super().__init__('science_control_publisher')
-#         self.publisher = self.create_publisher(ScienceControl, '/science_control', 10)
-#
-#     def publish_control(self, data):
-#         msg = ScienceControl()
-#         msg.linear_actuator = data.get("linear_actuator", 0)
-#         msg.req_height = data.get("req_height", False)
-#         msg.req_nir = data.get("req_nir", False)
-#         self.publisher.publish(msg)
-#
-#
-# # Initialize Science Feedback Subscriber
-# science_feedback_node = ScienceFeedbackSubscriber()
-# ros_manager.add_node(science_feedback_node)
-#
-# # Initialize Science Control Publisher
-# science_control_node = ScienceControlPublisher()
-# ros_manager.add_node(science_control_node)
-#
-#
-# def get_science_feedback(request):
-#     # Retrieve the latest science feedback data
-#     if science_feedback_node.latest_feedback:
-#         return JsonResponse(science_feedback_node.latest_feedback)
-#     return JsonResponse({"error": "No science feedback available"}, status=204)
-#
-#
-# @csrf_exempt
-# def set_science_control(request):
-#     # Set science control settings via a ROS2 publisher
-#     if request.method == "POST":
-#         try:
-#             data = json.loads(request.body)
-#             science_control_node.publish_control(data)
-#             return JsonResponse({"status": "success", "message": "Science control command sent!"})
-#         except json.JSONDecodeError:
-#             logging.error(f"Invalid JSON received: {e}")
-#             return JsonResponse({"error": "Invalid JSON"}, status=400)
-#         except Exception as e:
-#             logging.error(f"Unexpected error processing science control: {e}")
-#             return JsonResponse({"error": "Internal server error"}, status=500)
-#
-#     return JsonResponse({"error": "Invalid request method"}, status=405)
+_nir_servo_demo_lock = threading.Lock()
+
+
+@csrf_exempt
+@require_POST
+def run_nir_servo_demo(request):
+    """POST /api/nir-servo-demo/ - runs gpio_scripts/nir_servo_pin15.py on the host."""
+    script_path = os.path.abspath(
+        os.path.join(settings.BASE_DIR, "..", "gpio_scripts", "nir_servo_pin15.py")
+    )
+    if not os.path.isfile(script_path):
+        return JsonResponse(
+            {"ok": False, "error": "nir_servo_pin15.py not found", "path": script_path},
+            status=404,
+        )
+
+    if not _nir_servo_demo_lock.acquire(blocking=False):
+        return JsonResponse(
+            {"ok": False, "error": "NIR servo demo is already running; wait for it to finish."},
+            status=409,
+        )
+
+    try:
+        r = subprocess.run(
+            [sys.executable, script_path],
+            capture_output=True,
+            text=True,
+            timeout=120.0,
+            cwd=os.path.dirname(script_path),
+        )
+        out = (r.stdout or "").strip()
+        err = (r.stderr or "").strip()
+        success = r.returncode == 0
+        if len(out) > 8000:
+            out = "…\n" + out[-7990:]
+        if len(err) > 4000:
+            err = "…\n" + err[-3990:]
+        return JsonResponse({
+            "ok": success,
+            "returncode": r.returncode,
+            "stdout": out,
+            "stderr": err,
+            "message": (
+                "NIR servo routine finished."
+                if success
+                else "NIR servo script exited with a non-zero status."
+            ),
+        })
+    except subprocess.TimeoutExpired as e:
+        o = e.stdout or ""
+        er = e.stderr or ""
+        if isinstance(o, bytes):
+            o = o.decode(errors="replace")
+        if isinstance(er, bytes):
+            er = er.decode(errors="replace")
+        o, er = o.strip(), er.strip()
+        return JsonResponse(
+            {
+                "ok": False,
+                "error": "NIR servo script timed out (exceeded 120s).",
+                "stdout": o[-4000:] if len(o) > 4000 else o,
+                "stderr": er[-2000:] if len(er) > 2000 else er,
+            },
+            status=504,
+        )
+    except Exception as e:
+        logging.exception("run_nir_servo_demo failed")
+        return JsonResponse({"ok": False, "error": str(e)}, status=500)
+    finally:
+        _nir_servo_demo_lock.release()
 
 
 # ----------------------------
@@ -1424,6 +1498,22 @@ ros_manager.add_node(arm_mode_node)
 arm_feedback_node = ArmFeedbackSubscriber()
 ros_manager.add_node(arm_feedback_node)
 
+# Science bridge (same process as arm publishers — topics appear in `ros2 topic list` on this host)
+if ROS_IMPORTS_AVAILABLE:
+    try:
+        kanga_science_node = KangaScienceBridgeNode()
+        ros_manager.add_node(kanga_science_node)
+        logging.info(
+            "KangaScienceBridgeNode registered — expect /kanga_science/linear_actuator_speed, "
+            "/kanga_science/heating, /kanga_science/cooling (+ sensor subs)."
+        )
+    except Exception:
+        logging.exception(
+            "KangaScienceBridgeNode failed to init; Science API will use empty feedback. "
+            "Check journal for traceback."
+        )
+        kanga_science_node = None
+
 
 # ─── Send velocity commands to interface ────────────────────────────────────────────
 @csrf_exempt
@@ -1625,7 +1715,7 @@ def get_arm_feedback(request):
 
 # ----------------------------
 
-if ROS_IMPORTS_AVAILABLE:
+if KANGA_INTERFACES_AVAILABLE:
 
     class BatteryInfoSubscriber(Node):
         def __init__(self):
@@ -1673,14 +1763,14 @@ if ROS_IMPORTS_AVAILABLE:
 
 else:
     logging.warning(
-        "ROS message imports unavailable; battery telemetry subscribers disabled."
+        "kanga_interfaces unavailable; battery telemetry subscribers disabled."
     )
     battery_info_sub = None
     bms_status_sub = None
 
 
 def battery_feedback_view(request):
-    if not ROS_IMPORTS_AVAILABLE or not battery_info_sub or not bms_status_sub:
+    if not KANGA_INTERFACES_AVAILABLE or not battery_info_sub or not bms_status_sub:
         placeholder = {
             "charge_pct": 0.0,
             "current_draw": 0.0,
