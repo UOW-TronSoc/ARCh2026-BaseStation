@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
+import { postCmd, isTimeoutError } from "utils/api";
 
 import VideoFeedCard from "components/VideoFeedCard/VideoFeedCard";
 import IncrementalMovementCard from "components/IncrementalMovementCard/IncrementalMovementCard";
@@ -68,11 +69,11 @@ export default function ArmControl() {
     try {
       const cmd = [...velocities.slice(0, 6)];
       while (cmd.length < 6) cmd.push(0);
-      await axios.post(`${API_BASE}/arm-velocity-command/`, {
+      await postCmd(`${API_BASE}/arm-velocity-command/`, {
         joint_velocities: cmd,
       });
     } catch (err) {
-      console.error("❌ Failed to send velocity command:", err.message);
+      if (!isTimeoutError(err)) console.error("Failed to send velocity command:", err.message);
     }
   };
 
@@ -94,7 +95,7 @@ export default function ArmControl() {
   // ─── EE command: Twist Vy/Vz/pitch (EE frame) + J1/J5/J6 to joint_control ────
   const sendEECommand = async ({ linearY = 0, linearZ = 0, pitch = 0, j1 = 0, j5 = 0, j6 = 0 } = {}) => {
     try {
-      await axios.post(`${API_BASE}/arm-ee-command/`, {
+      await postCmd(`${API_BASE}/arm-ee-command/`, {
         linear_y: linearY,
         linear_z: linearZ,
         angular_pitch: pitch,
@@ -103,7 +104,7 @@ export default function ArmControl() {
         j6_velocity: j6,
       });
     } catch (err) {
-      console.error("Failed to send EE command:", err.message);
+      if (!isTimeoutError(err)) console.error("Failed to send EE command:", err.message);
     }
   };
 
@@ -111,10 +112,10 @@ export default function ArmControl() {
   const toggleControlMode = async () => {
     const next = controlMode === "joint" ? "ee" : "joint";
     try {
-      await axios.post(`${API_BASE}/arm-mode/`, { mode: next });
+      await postCmd(`${API_BASE}/arm-mode/`, { mode: next });
       setControlMode(next);
     } catch (err) {
-      console.error("Failed to toggle mode:", err.message);
+      if (!isTimeoutError(err)) console.error("Failed to toggle mode:", err.message);
     }
   };
 

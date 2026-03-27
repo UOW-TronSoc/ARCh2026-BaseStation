@@ -2,6 +2,16 @@
   font-weight: 600;
 }
 
+.rotateBtn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  line-height: 1;
+  font-size: 1.1rem;
+  backdrop-filter: blur(4px);
+  background: rgba(0, 0, 0, 0.45);
+}
+
 /* Readable dark text on overlays + camera list menu */
 .videoFeedCard :global(.dropdown-menu) {
   color: #000;

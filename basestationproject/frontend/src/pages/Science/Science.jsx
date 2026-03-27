@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import axios from "axios";
+import { postCmd, isTimeoutError } from "utils/api";
 import VideoFeedCard from "components/VideoFeedCard/VideoFeedCard";
 import { getApiBase } from "../../config";
 import "./Science.css";
@@ -21,7 +22,10 @@ export default function Science() {
   const feedbackRef = useRef(feedback);
   feedbackRef.current = feedback;
 
-  const [nirDemo, setNirDemo] = useState({ status: "idle", message: "", detail: "" });
+  const [nirDuty, setNirDuty] = useState(0);
+  const [nirError, setNirError] = useState("");
+  const nirDutyRef = useRef(0);
+  const nirKeyInterval = useRef(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -49,9 +53,9 @@ export default function Science() {
   const sendControl = useCallback(
     async (payload) => {
       try {
-        await axios.post(`${API_BASE}/science-control/`, payload);
+        await postCmd(`${API_BASE}/science-control/`, payload);
       } catch (err) {
-        console.error("Failed to send science control:", err.message);
+        if (!isTimeoutError(err)) console.error("Failed to send science control:", err.message);
       }
     },
     [API_BASE]
@@ -61,32 +65,60 @@ export default function Science() {
   const handleHeating = () => sendControl({ heating: !feedback.heating_on });
   const handleCooling = () => sendControl({ cooling: !feedback.cooling_on });
 
-  const runNirServoDemo = useCallback(async () => {
-    setNirDemo({ status: "running", message: "Running NIR servo routine…", detail: "" });
-    try {
-      const { data } = await axios.post(`${API_BASE}/nir-servo-demo/`, {});
-      if (data.ok) {
-        setNirDemo({
-          status: "success",
-          message: data.message || "NIR servo routine finished.",
-          detail: (data.stdout || "").trim(),
-        });
-      } else {
-        setNirDemo({
-          status: "error",
-          message: data.message || data.error || "NIR servo script failed.",
-          detail: [data.stderr, data.stdout].filter(Boolean).join("\n\n").trim(),
-        });
+  const sendNirDuty = useCallback(
+    async (duty) => {
+      try {
+        await postCmd(`${API_BASE}/nir-servo-control/`, { duty });
+        setNirError("");
+      } catch (err) {
+        if (!isTimeoutError(err)) setNirError(err.response?.data?.error || err.message || "Servo error");
       }
-    } catch (err) {
-      const d = err.response?.data;
-      setNirDemo({
-        status: "error",
-        message: d?.error || d?.message || err.message || "Could not run NIR servo demo.",
-        detail: [d?.stderr, d?.stdout].filter(Boolean).join("\n\n").trim(),
-      });
-    }
-  }, [API_BASE]);
+    },
+    [API_BASE]
+  );
+
+  // Arrow-key hold → continuous servo movement
+  useEffect(() => {
+    const STEP = 2;
+    const INTERVAL_MS = 60;
+    const keysHeld = { ArrowLeft: false, ArrowRight: false };
+
+    const tick = (dir) => {
+      const next = Math.max(0, Math.min(100, nirDutyRef.current + STEP * dir));
+      if (next === nirDutyRef.current) return;
+      nirDutyRef.current = next;
+      setNirDuty(next);
+      sendNirDuty(next);
+    };
+
+    const handleKeyDown = (e) => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      if (keysHeld[e.key]) return;
+      e.preventDefault();
+      keysHeld[e.key] = true;
+
+      const dir = e.key === "ArrowRight" ? -1 : 1;
+      tick(dir);
+      clearInterval(nirKeyInterval.current);
+      nirKeyInterval.current = setInterval(() => tick(dir), INTERVAL_MS);
+    };
+
+    const handleKeyUp = (e) => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      keysHeld[e.key] = false;
+      if (!keysHeld.ArrowLeft && !keysHeld.ArrowRight) {
+        clearInterval(nirKeyInterval.current);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      clearInterval(nirKeyInterval.current);
+    };
+  }, [sendNirDuty]);
 
   // Gamepad: D-pad → linear actuator speed, A → heating toggle, B → cooling toggle
   const prevBtnsRef = useRef({ a: false, b: false });
@@ -219,31 +251,26 @@ export default function Science() {
         <div className="card Science-card">
           <div className="card-header Science-card-header">NIR Servo (Pin 15)</div>
           <div className="card-body">
-            <p className="small text-muted mb-2">PWM sweep 0% → 60% → 0%</p>
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              disabled={nirDemo.status === "running"}
-              onClick={runNirServoDemo}
-            >
-              {nirDemo.status === "running" ? "Running…" : "Run NIR Servo"}
-            </button>
-            {nirDemo.status !== "idle" && (
+            <div className="Science-servo-bar-track">
               <div
-                className={`mt-2 small ${
-                  nirDemo.status === "running"
-                    ? "text-info"
-                    : nirDemo.status === "success"
-                      ? "text-success"
-                      : "text-danger"
-                }`}
+                className="Science-servo-bar-fill"
+                style={{ width: `${nirDuty}%` }}
+              />
+              <span className="Science-servo-bar-label">{nirDuty}%</span>
+            </div>
+            <div className="d-flex align-items-center justify-content-between mt-2">
+              <small className="text-muted">
+                Hold <kbd>←</kbd> / <kbd>→</kbd> arrow keys
+              </small>
+              <button
+                type="button"
+                className="btn btn-outline-warning btn-sm"
+                onClick={() => { nirDutyRef.current = 0; setNirDuty(0); sendNirDuty(0); }}
               >
-                <div className="fw-semibold">{nirDemo.message}</div>
-                {nirDemo.detail && (
-                  <pre className="Science-demo-detail small mt-1 mb-0">{nirDemo.detail}</pre>
-                )}
-              </div>
-            )}
+                Reset
+              </button>
+            </div>
+            {nirError && <small className="text-danger d-block mt-1">{nirError}</small>}
           </div>
         </div>
 

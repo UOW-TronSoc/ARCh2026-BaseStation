@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, Suspense } from "react";
+import React, { useState, useEffect, useRef, useCallback, Suspense } from "react";
 import "bootstrap/dist/css/bootstrap.min.css";
 import "./CameraFeed.css";
 
@@ -142,24 +142,58 @@ const CameraFeed = () => {
   const [showBirdsEye, setShowBirdsEye] = useState(false);
   const [gridMode, setGridMode] = useState(false);
   const [gridSlots, setGridSlots] = useState(defaultGridSlots);
+  const [rotations, setRotations] = useState({});
+  const rotateCamera = (id) =>
+    setRotations((prev) => ({ ...prev, [id]: ((prev[id] || 0) + 90) % 360 }));
 
-  // Fetch camera list from API
+  // Poll /api/cameras/ continuously so newly plugged USB cameras appear without a restart.
+  // The backend's _sync_new_usb_cameras() probes /dev/video* on each call, so polling here
+  // is sufficient — no service restart needed for hotplug.
   useEffect(() => {
-    fetch(`${API_BASE}/cameras/`, { credentials: 'include' })
-      .then((res) => (res.ok ? res.json() : Promise.reject()))
-      .then((data) => {
-        const list = data.cameras || [];
-        setCameras(list);
-        setUsbDevicePaths(data.usb_device_paths || {});
-        setActiveCameras(Array(list.length).fill(false));
-        setImageSrcs(Array(list.length).fill(""));
-      })
-      .catch(() => setCameras([]));
+    let cancelled = false;
+    let pollTimer = null;
+    const POLL_INTERVAL_MS = 8000;
+
+    const fetchCameras = () => {
+      fetch(`${API_BASE}/cameras/`, { credentials: 'include' })
+        .then((res) => (res.ok ? res.json() : Promise.reject()))
+        .then((data) => {
+          if (cancelled) return;
+          const list = data.cameras || [];
+          setCameras((prev) =>
+            prev.join(",") === list.join(",") ? prev : list
+          );
+          setUsbDevicePaths(data.usb_device_paths || {});
+          // Preserve active state of existing cameras; only extend/trim for count changes.
+          setActiveCameras((prev) => {
+            if (prev.length === list.length) return prev;
+            if (list.length > prev.length)
+              return [...prev, ...Array(list.length - prev.length).fill(false)];
+            return prev.slice(0, list.length);
+          });
+          setImageSrcs((prev) => {
+            if (prev.length === list.length) return prev;
+            if (list.length > prev.length)
+              return [...prev, ...Array(list.length - prev.length).fill("")];
+            return prev.slice(0, list.length);
+          });
+          pollTimer = setTimeout(fetchCameras, POLL_INTERVAL_MS);
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setCameras([]);
+            pollTimer = setTimeout(fetchCameras, POLL_INTERVAL_MS);
+          }
+        });
+    };
+
+    fetchCameras();
+    return () => { cancelled = true; clearTimeout(pollTimer); };
   }, []);
 
   // 2D: onLoad-driven chain (like IP camera admin)—request next frame when current loads
   const makeFrameUrl = (cameraName, t) =>
-    `${API_BASE}/video_feed/${encodeURIComponent(cameraName)}/?single=1&t=${t}`;
+    `${API_BASE}/video_feed/${encodeURIComponent(cameraName)}/?single=1&q=40&w=480&t=${t}`;
   useEffect(() => {
     if (!cameras.length) return;
     setImageSrcs(
@@ -315,6 +349,66 @@ const CameraFeed = () => {
     ? cameras.map((_, i) => i).filter((i) => !camerasInGrid.has(i))
     : sidebar;
 
+  // --- NIR Servo arrow-key control ---
+  const [nirServoEnabled, setNirServoEnabled] = useState(false);
+  const [nirDuty, setNirDuty] = useState(0);
+  const nirDutyRef = useRef(0);
+  const nirKeyInterval = useRef(null);
+
+  const sendNirDuty = useCallback(
+    (duty) => {
+      fetch(`${API_BASE}/nir-servo-control/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ duty }),
+      }).catch(() => {});
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!nirServoEnabled) return;
+    const STEP = 2;
+    const INTERVAL_MS = 60;
+    const keysHeld = { ArrowLeft: false, ArrowRight: false };
+
+    const tick = (dir) => {
+      const next = Math.max(0, Math.min(100, nirDutyRef.current + STEP * dir));
+      if (next === nirDutyRef.current) return;
+      nirDutyRef.current = next;
+      setNirDuty(next);
+      sendNirDuty(next);
+    };
+
+    const handleKeyDown = (e) => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      if (keysHeld[e.key]) return;
+      e.preventDefault();
+      keysHeld[e.key] = true;
+      const dir = e.key === "ArrowRight" ? 1 : -1;
+      tick(dir);
+      clearInterval(nirKeyInterval.current);
+      nirKeyInterval.current = setInterval(() => tick(dir), INTERVAL_MS);
+    };
+
+    const handleKeyUp = (e) => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      keysHeld[e.key] = false;
+      if (!keysHeld.ArrowLeft && !keysHeld.ArrowRight) {
+        clearInterval(nirKeyInterval.current);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      clearInterval(nirKeyInterval.current);
+    };
+  }, [nirServoEnabled, sendNirDuty]);
+
   return (
     <div className="cameraPage">
       <div className="container-fluid px-3 main-container text-white">
@@ -401,10 +495,18 @@ const CameraFeed = () => {
                             </div>
                             {activeCameras[cameraIndex] && (
                               <div className="cameraGridSlotView">
+                                <button
+                                  className="cameraRotateBtn"
+                                  onClick={(e) => { e.stopPropagation(); rotateCamera(cameraIndex); }}
+                                  title="Rotate 90° clockwise"
+                                >
+                                  ↻
+                                </button>
                                 <img
                                   src={imageSrcs[cameraIndex] || undefined}
                                   alt={displayName(cameras[cameraIndex])}
                                   className="cameraImg"
+                                  style={{ transform: `rotate(${rotations[cameraIndex] || 0}deg)` }}
                                   onLoad={() => onFrameLoad(cameraIndex)}
                                   onError={() => onFrameError(cameraIndex)}
                                 />
@@ -440,10 +542,18 @@ const CameraFeed = () => {
                     </div>
                     {activeCameras[id] && (
                       <div className="cameraTileView" onClick={() => toggleFocus(id)}>
+                        <button
+                          className="cameraRotateBtn"
+                          onClick={(e) => { e.stopPropagation(); rotateCamera(id); }}
+                          title="Rotate 90° clockwise"
+                        >
+                          ↻
+                        </button>
                         <img
                           src={imageSrcs[id] || undefined}
                           alt={displayName(cameras[id])}
                           className="cameraImg"
+                          style={{ transform: `rotate(${rotations[id] || 0}deg)` }}
                           onLoad={() => onFrameLoad(id)}
                           onError={() => onFrameError(id)}
                         />
@@ -480,7 +590,7 @@ const CameraFeed = () => {
                         draggable={gridMode}
                         onDragStart={gridMode ? (e) => handleDragStart(e, id) : undefined}
                       >
-                        <img src={imageSrcs[id] || undefined} alt={displayName(cameras[id])} onLoad={() => onFrameLoad(id)} onError={() => onFrameError(id)} />
+                        <img src={imageSrcs[id] || undefined} alt={displayName(cameras[id])} style={{ transform: `rotate(${rotations[id] || 0}deg)` }} onLoad={() => onFrameLoad(id)} onError={() => onFrameError(id)} />
                       </div>
                     )}
                   </div>
@@ -489,6 +599,42 @@ const CameraFeed = () => {
           )}
         </div>
       ) : null}
+
+      {/* NIR Servo control bar */}
+      <div className="nirServoCard">
+        <div className="nirServoRow">
+          <label className="nirServoToggle">
+            <input
+              type="checkbox"
+              checked={nirServoEnabled}
+              onChange={(e) => setNirServoEnabled(e.target.checked)}
+            />
+            <span className="nirServoToggleTrack">
+              <span className="nirServoToggleThumb" />
+            </span>
+            <span className="nirServoLabel">NIR Servo</span>
+          </label>
+          {nirServoEnabled && (
+            <>
+              <div className="nirServoBarTrack">
+                <div className="nirServoBarFill" style={{ width: `${nirDuty}%` }} />
+                <span className="nirServoBarLabel">{nirDuty}%</span>
+              </div>
+              <span className="nirServoHint">
+                <kbd>←</kbd> / <kbd>→</kbd>
+              </span>
+              <button
+                type="button"
+                className="btn btn-outline-warning btn-sm"
+                onClick={() => { nirDutyRef.current = 0; setNirDuty(0); sendNirDuty(0); }}
+              >
+                Reset
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
       </div>
     </div>
   );

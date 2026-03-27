@@ -5,6 +5,8 @@ import time
 # Use BOARD numbering so this matches the physical header pin number
 SERVO_PIN = 33          # change this if your servo is actually on a different header pin
 PWM_FREQ = 50           # 50 Hz for hobby servos
+START_ANGLE = 10
+TARGET_ANGLE = 120
 
 GPIO.setmode(GPIO.BOARD)
 GPIO.setup(SERVO_PIN, GPIO.OUT)
@@ -28,15 +30,15 @@ def set_angle(angle_deg: float, settle_time: float = 0.5):
     time.sleep(settle_time)
 
 try:
-    print("Moving from 10 to 60 degrees slowly...")
-    for angle in range(10, 61):
+    print(f"Moving from {START_ANGLE} to {TARGET_ANGLE} degrees slowly...")
+    for angle in range(START_ANGLE, TARGET_ANGLE + 1):
         duty = angle_to_duty(angle)
         pwm.ChangeDutyCycle(duty)
         time.sleep(0.05)
         print(f"  {angle} deg")
 
-    print("Moving back from 60 to 10 degrees slowly...")
-    for angle in range(80, 9, -1):
+    print(f"Moving back from {TARGET_ANGLE} to {START_ANGLE} degrees slowly...")
+    for angle in range(TARGET_ANGLE, START_ANGLE - 1, -1):
         duty = angle_to_duty(angle)
         pwm.ChangeDutyCycle(duty)
         time.sleep(0.05)

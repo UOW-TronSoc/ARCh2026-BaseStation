@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import styles from "./EndEffectorPitchCard.module.css";
-import axios from "axios";
+import { postCmd, isTimeoutError } from "utils/api";
 
 
 export default function EndEffectorPitchCard({ api }) {
@@ -8,23 +8,23 @@ export default function EndEffectorPitchCard({ api }) {
 
   const handleLockToggle = async () => {
     try {
-      await axios.post(`${api}/lock-end-effector-pitch/`, { locked: !locked });
+      await postCmd(`${api}/lock-end-effector-pitch/`, { locked: !locked });
       setLocked(!locked);
     } catch (err) {
-      console.error("Failed to toggle pitch lock:", err.message);
+      if (!isTimeoutError(err)) console.error("Failed to toggle pitch lock:", err.message);
     }
   };
 
   const handleHorizontal = async () => {
     const pose = {
       name: ["theta1", "theta2", "theta3", "theta4", "theta5"],
-      position: [0.0, -1.2, 1.2, 0.0, 0.0], // define your horizontal alignment here
+      position: [0.0, -1.2, 1.2, 0.0, 0.0],
     };
   
     try {
-      await axios.post(`${api}/horizontal-end-effector-pitch/`, pose);
+      await postCmd(`${api}/horizontal-end-effector-pitch/`, pose);
     } catch (err) {
-      console.error("Failed to align pitch horizontally:", err.message);
+      if (!isTimeoutError(err)) console.error("Failed to align pitch horizontally:", err.message);
     }
   };
   

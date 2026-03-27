@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import axios from "axios";
+import { postCmd, isTimeoutError } from "utils/api";
 
 import IncrementalMovementCard from "components/IncrementalMovementCard/IncrementalMovementCard";
 import barStyles from "components/DrivetrainCard/DrivetrainCard.module.css";
@@ -87,9 +87,9 @@ export default function ArmControlCompact() {
     try {
       const cmd = [...velocities.slice(0, 6)];
       while (cmd.length < 6) cmd.push(0);
-      await axios.post(`${ARM_API}/velocity`, { joint_velocities: cmd });
+      await postCmd(`${ARM_API}/velocity`, { joint_velocities: cmd });
     } catch (err) {
-      console.error("Failed to send velocity command:", err.message);
+      if (!isTimeoutError(err)) console.error("Failed to send velocity command:", err.message);
     } finally {
       if (stream) velocityRequestInFlight.current = false;
     }
@@ -107,7 +107,7 @@ export default function ArmControlCompact() {
       eeRequestInFlight.current = true;
     }
     try {
-      await axios.post(`${ARM_API}/ee`, {
+      await postCmd(`${ARM_API}/ee`, {
         linear_y: linearY,
         linear_z: linearZ,
         angular_x: angularX,
@@ -116,7 +116,7 @@ export default function ArmControlCompact() {
         j6_velocity: j6,
       });
     } catch (err) {
-      console.error("Failed to send EE command:", err.message);
+      if (!isTimeoutError(err)) console.error("Failed to send EE command:", err.message);
     } finally {
       if (stream) eeRequestInFlight.current = false;
     }
@@ -127,10 +127,10 @@ export default function ArmControlCompact() {
     if (!armControlEnabledRef.current) return;
     const next = controlModeRef.current === "joint" ? "ee" : "joint";
     try {
-      await axios.post(`${ARM_API}/mode`, { mode: next });
+      await postCmd(`${ARM_API}/mode`, { mode: next });
       setControlMode(next);
     } catch (err) {
-      console.error("Failed to toggle mode:", err.message);
+      if (!isTimeoutError(err)) console.error("Failed to toggle mode:", err.message);
     }
   };
   toggleControlModeRef.current = toggleControlMode;

@@ -110,6 +110,7 @@
   justify-content: center;
   cursor: pointer;
   overflow: hidden;
+  position: relative;
 }
 
 .cameraImg {
@@ -244,6 +245,7 @@
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  position: relative;
 }
 
 .cameraGridSlotPlaceholder {
@@ -282,6 +284,33 @@
   }
 }
 
+.cameraRotateBtn {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 3;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 4px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 1.05rem;
+  line-height: 1;
+  padding: 0;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.cameraRotateBtn:hover {
+  background: rgba(0, 0, 0, 0.8);
+  border-color: var(--accent, #F8CE4D);
+  color: var(--accent, #F8CE4D);
+}
+
 .focus-placeholder {
   flex: 1;
   display: flex;
@@ -307,4 +336,122 @@
 .btn-accent-secondary:hover {
   background-color: var(--accent-mode);
   color: #000;
+}
+
+/* --- NIR Servo bottom bar --- */
+.nirServoCard {
+  width: 100%;
+  margin-top: var(--space-md);
+  background: #2a2a2a;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: var(--space-sm) var(--space-md);
+  flex-shrink: 0;
+}
+
+.nirServoRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+/* Toggle switch */
+.nirServoToggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  cursor: pointer;
+  margin: 0;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.nirServoToggle input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.nirServoToggleTrack {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 11px;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.nirServoToggle input:checked + .nirServoToggleTrack {
+  background: var(--accent, #F8CE4D);
+}
+
+.nirServoToggleThumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+
+.nirServoToggle input:checked + .nirServoToggleTrack .nirServoToggleThumb {
+  transform: translateX(18px);
+}
+
+.nirServoLabel {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #ccc;
+  white-space: nowrap;
+}
+
+/* Duty bar */
+.nirServoBarTrack {
+  position: relative;
+  flex: 1;
+  height: 22px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  overflow: hidden;
+  min-width: 80px;
+}
+
+.nirServoBarFill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent, #F8CE4D), #e6a700);
+  border-radius: 4px 0 0 4px;
+  transition: width 0.06s linear;
+}
+
+.nirServoBarLabel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+
+.nirServoHint {
+  font-size: 0.8rem;
+  color: #888;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.nirServoHint kbd {
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 0.8em;
+  font-family: inherit;
 }

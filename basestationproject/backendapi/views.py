@@ -67,6 +67,7 @@ from asgiref.sync import async_to_sync
 # Custom Imports
 from .models import *
 from .serialisers import ChecklistGroupSerializer, ChecklistTaskSerializer
+from .health_snapshot import collect_system_metrics, probe_local_services
 
 
 class ChecklistGroupViewSet(viewsets.ReadOnlyModelViewSet):
@@ -99,6 +100,56 @@ def update_checklist_task(request, task_id):
 def status_view(request):
     """GET /api/status/ — backend health/connectivity check for the navbar."""
     return JsonResponse({"status": "ok", "connected": True})
+
+
+def _django_ros2_status():
+    """ROS2 client state inside this Django process (arm/science bridge)."""
+    info = {
+        "ros_standard_imports_ok": ROS_IMPORTS_AVAILABLE,
+        "rclpy_ok": False,
+        "executor_thread_alive": False,
+        "registered_nodes": 0,
+    }
+    try:
+        info["rclpy_ok"] = bool(rclpy.ok())
+        th = getattr(ros_manager, "executor_thread", None)
+        info["executor_thread_alive"] = bool(th and th.is_alive())
+        info["registered_nodes"] = len(getattr(ros_manager, "nodes", {}) or {})
+    except Exception as e:
+        info["error"] = str(e)
+    info["healthy"] = bool(
+        info["ros_standard_imports_ok"]
+        and info["rclpy_ok"]
+        and info["executor_thread_alive"]
+        and info["registered_nodes"] > 0
+    )
+    return info
+
+
+@require_GET
+def basestation_health_view(request):
+    """
+    GET /api/status/health/ (alias: /api/basestation-health/)
+    Local services (loopback) + host CPU/RAM/temp/GPU for the Log Viewer dashboard.
+    """
+    try:
+        probed = probe_local_services()
+        payload = {
+            "services": {
+                "django": {
+                    "running": True,
+                    "role": "Basestation Django API (this process)",
+                },
+                "django_ros2": _django_ros2_status(),
+                **probed,
+            },
+            "system": collect_system_metrics(),
+            "timestamp": time.time(),
+        }
+        return JsonResponse(payload)
+    except Exception as e:
+        logging.exception("basestation_health_view failed")
+        return JsonResponse({"error": str(e)}, status=500)
 
 
 class ROS2Manager:
@@ -196,11 +247,33 @@ USB_STREAM_HEIGHT = 600
 USB_STREAM_FPS = 15
 USB_INTER_CAMERA_DELAY_S = 0.8  # delay between starting each USB cam to avoid driver race
 
-# FFmpeg / libavformat options for OpenCV's CAP_FFMPEG (low RTSP latency vs default ~1s buffer).
-# Syntax: key;value pairs separated by | — applied when the capture is opened.
+# FFmpeg / libavformat options for OpenCV's CAP_FFMPEG — minimum RTSP latency.
+# Syntax: key;value pairs separated by | — applied via env var before VideoCapture().
+#   analyzeduration=0, probesize=32  → skip the default 5-second stream analysis
+#   fflags nobuffer+discardcorrupt   → no demuxer buffering, drop corrupt frames
+#   flags low_delay                  → tell decoder to output frames ASAP
+#   max_delay=0, reorder_queue_size=0→ no packet reorder window
+#   avioflags=direct                 → bypass I/O layer buffering
+#   stimeout=5000000                 → 5s socket timeout so grab() doesn't hang forever
 _RTSP_FFMPEG_OPTS = (
-    "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|max_delay;250000|reorder_queue_size;0"
+    "rtsp_transport;tcp"
+    "|fflags;nobuffer+discardcorrupt"
+    "|flags;low_delay"
+    "|analyzeduration;0"
+    "|probesize;32"
+    "|max_delay;0"
+    "|reorder_queue_size;0"
+    "|avioflags;direct"
+    "|stimeout;5000000"
 )
+
+# Timed-drain threshold for the RTSP capture loop (seconds).
+# grab() returns almost instantly for frames already sitting in FFmpeg's internal
+# buffer, but blocks for a full frame interval (~33ms @30fps) when the buffer is
+# empty and it has to wait for the next network packet.  Any grab that takes
+# longer than this threshold is treated as "fresh from the wire" and kept.
+# 20ms works on Jetson (ARM software decode ≤15ms/frame for 1080p H.264).
+_RTSP_DRAIN_THRESHOLD_S = 0.020
 
 _usb_camera_registry_lock = threading.Lock()
 _last_usb_hotplug_sync = 0.0
@@ -405,6 +478,9 @@ class DirectCameraSource:
                 self._cap = _usb_video_capture(int(self.source))
             if self._cap and self._cap.isOpened():
                 if self.source_type == "rtsp":
+                    # CAP_PROP_BUFFERSIZE is only honoured by V4L2/DirectShow,
+                    # not CAP_FFMPEG.  Real RTSP latency reduction is handled by
+                    # _RTSP_FFMPEG_OPTS + the timed-drain loop in _capture_loop.
                     self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                 else:
                     self.actual_format = _configure_usb_capture(self._cap, log_name=self.name)
@@ -417,9 +493,27 @@ class DirectCameraSource:
         """Background thread: continuously read frames."""
         while self._running and self._cap and self._cap.isOpened():
             if self.source_type == "rtsp":
-                # Drop queued frames so we show latest (FFmpeg may still queue briefly).
-                self._cap.grab()
-            ret, frame = self._cap.read()
+                # Drain stale frames from FFmpeg's internal buffer so we
+                # always display the most recent frame from the wire.
+                # grab() returns nearly instantly for buffered frames but
+                # blocks ~frame_interval when the buffer is empty.  We time
+                # each call: once it blocks past the threshold the frame is
+                # fresh and we keep it via retrieve().
+                latest_ok = False
+                for _ in range(30):
+                    t0 = time.monotonic()
+                    ok = self._cap.grab()
+                    if not ok:
+                        break
+                    latest_ok = True
+                    if (time.monotonic() - t0) > _RTSP_DRAIN_THRESHOLD_S:
+                        break
+                if latest_ok:
+                    ret, frame = self._cap.retrieve()
+                else:
+                    ret, frame = False, None
+            else:
+                ret, frame = self._cap.read()
             if ret and frame is not None:
                 with self.lock:
                     self.current_frame = frame.copy()
@@ -463,23 +557,37 @@ class DirectCameraSource:
             self._thread = None
 
 
+_USB_PROBE_TIMEOUT_S = 6
+
+
 def _try_probe_usb_index(idx: int):
     """
     Quick validation: device opens, we set MJPEG (the format we'll actually stream),
-    and get at least one frame. Probing at the real format avoids "works in probe,
-    fails in stream" due to bandwidth or format mismatch.
+    and get at least one frame. Runs in a sub-thread with a hard timeout so a stuck
+    V4L2 device cannot block the scan indefinitely.
     """
-    cap = _usb_video_capture(idx)
-    try:
-        if not cap.isOpened():
-            return None
-        _configure_usb_capture(cap, log_name=f"probe usb_{idx}")
-        if not _v4l2_warmup_grab(cap):
-            logging.warning("USB probe usb_%s: opened but no frames", idx)
-            return None
-        return {"name": f"usb_{idx}", "index": idx}
-    finally:
-        cap.release()
+    result = [None]
+
+    def _probe():
+        cap = _usb_video_capture(idx)
+        try:
+            if not cap.isOpened():
+                return
+            _configure_usb_capture(cap, log_name=f"probe usb_{idx}")
+            if not _v4l2_warmup_grab(cap):
+                logging.warning("USB probe usb_%s: opened but no frames", idx)
+                return
+            result[0] = {"name": f"usb_{idx}", "index": idx}
+        finally:
+            cap.release()
+
+    t = threading.Thread(target=_probe, daemon=True, name=f"probe-usb-{idx}")
+    t.start()
+    t.join(timeout=_USB_PROBE_TIMEOUT_S)
+    if t.is_alive():
+        logging.warning("USB probe usb_%s timed out after %ss — skipping", idx, _USB_PROBE_TIMEOUT_S)
+        return None
+    return result[0]
 
 
 def _probe_usb_cameras():
@@ -506,11 +614,15 @@ def _probe_usb_cameras():
 def _sync_new_usb_cameras():
     """Attach any newly appeared USB capture devices (no Django restart)."""
     global _last_usb_hotplug_sync
+    if not _usb_initial_scan_done:
+        return
     now = time.monotonic()
     if now - _last_usb_hotplug_sync < _USB_HOTPLUG_MIN_INTERVAL_S:
         return
     _last_usb_hotplug_sync = now
-    with _usb_camera_registry_lock:
+    if not _usb_camera_registry_lock.acquire(timeout=0.5):
+        return
+    try:
         new_cams = []
         for idx in _discover_usb_video_indices():
             name = f"usb_{idx}"
@@ -531,6 +643,8 @@ def _sync_new_usb_cameras():
             logging.info("Registered new USB camera %s (index %s)", name, cfg["index"])
             if i < len(new_cams) - 1:
                 time.sleep(USB_INTER_CAMERA_DELAY_S)
+    finally:
+        _usb_camera_registry_lock.release()
 
 
 def initialize_cameras():
@@ -553,26 +667,42 @@ def initialize_cameras():
 camera_nodes = initialize_cameras()
 
 
-def _register_usb_cameras_if_needed():
-    """One-time scan of /dev/video* and start DirectCameraSource for working nodes."""
+_usb_scan_thread = None
+
+
+def _do_usb_scan():
+    """Background worker: probe /dev/video* and register DirectCameraSources."""
     global _usb_initial_scan_done, _last_usb_hotplug_sync
-    with _usb_camera_registry_lock:
-        if _usb_initial_scan_done:
-            return
-        usb_cams = _probe_usb_cameras()
-        for i, cfg in enumerate(usb_cams):
-            name = cfg["name"]
-            if name in camera_nodes:
-                continue
-            src = DirectCameraSource(name, cfg["index"], source_type="usb")
-            src.start()
-            camera_nodes[name] = src
-            # Stagger USB camera starts to avoid bandwidth spike / driver race
-            if i < len(usb_cams) - 1:
-                time.sleep(USB_INTER_CAMERA_DELAY_S)
-        _usb_initial_scan_done = True
-        _last_usb_hotplug_sync = time.monotonic()
-        logging.info("USB cameras registered: %s", [k for k in camera_nodes if k.startswith("usb_")])
+    try:
+        with _usb_camera_registry_lock:
+            if _usb_initial_scan_done:
+                return
+            usb_cams = _probe_usb_cameras()
+            for i, cfg in enumerate(usb_cams):
+                name = cfg["name"]
+                if name in camera_nodes:
+                    continue
+                src = DirectCameraSource(name, cfg["index"], source_type="usb")
+                src.start()
+                camera_nodes[name] = src
+                if i < len(usb_cams) - 1:
+                    time.sleep(USB_INTER_CAMERA_DELAY_S)
+            _usb_initial_scan_done = True
+            _last_usb_hotplug_sync = time.monotonic()
+            logging.info("USB cameras registered: %s", [k for k in camera_nodes if k.startswith("usb_")])
+    except Exception:
+        logging.exception("USB camera scan failed")
+
+
+def _register_usb_cameras_if_needed():
+    """Kick off USB scan in background so the HTTP request is never blocked."""
+    global _usb_scan_thread
+    if _usb_initial_scan_done:
+        return
+    if _usb_scan_thread is not None and _usb_scan_thread.is_alive():
+        return
+    _usb_scan_thread = threading.Thread(target=_do_usb_scan, daemon=True, name="usb-cam-scan")
+    _usb_scan_thread.start()
 
 
 def _usb_device_path_for_name(name: str):
@@ -661,11 +791,11 @@ _servo_demo_lock = threading.Lock()
 def run_servo_demo(request):
     """
     POST /api/servo-demo/
-    Runs scripts/servo_controller.py under the Django project root (basestation host, e.g. Jetson).
+    Runs gpio_scripts/servo_controller.py on the basestation host (e.g. Jetson).
     Returns stdout/stderr and ok flag so the dashboard can show whether it actually ran.
     """
     script_path = os.path.abspath(
-        os.path.join(settings.BASE_DIR, "scripts", "servo_controller.py")
+        os.path.join(settings.BASE_DIR, "..", "gpio_scripts", "servo_controller.py")
     )
     if not os.path.isfile(script_path):
         return JsonResponse(
@@ -1215,76 +1345,76 @@ def set_science_control(request):
         return JsonResponse({"error": "Internal server error"}, status=500)
 
 
-_nir_servo_demo_lock = threading.Lock()
+# ---------------------------------------------------------------------------
+# NIR Servo – interactive PWM control (Pin 15, 50 Hz)
+# Managed in-process so the browser can send duty-cycle updates in real time
+# via POST /api/nir-servo-control/.  Lazy-inits Jetson.GPIO on first call.
+# ---------------------------------------------------------------------------
+_nir_servo_lock = threading.Lock()
+_nir_servo_pwm = None
+_nir_servo_duty = 0
+_NIR_SERVO_PIN = 15
+_NIR_SERVO_FREQ = 50
+_NIR_SERVO_MIN_DUTY = 2.5   # 0 degrees
+_NIR_SERVO_MAX_DUTY = 12.5  # 180 degrees
+
+
+def _nir_angle_to_duty(angle: float) -> float:
+    """Map 0-100 (UI percentage) to the actual servo duty-cycle range."""
+    angle = max(0.0, min(100.0, angle))
+    return _NIR_SERVO_MIN_DUTY + (angle / 100.0) * (_NIR_SERVO_MAX_DUTY - _NIR_SERVO_MIN_DUTY)
+
+
+def _nir_servo_ensure_init():
+    global _nir_servo_pwm
+    if _nir_servo_pwm is not None:
+        return True
+    try:
+        import Jetson.GPIO as GPIO
+        GPIO.setwarnings(False)
+        GPIO.setmode(GPIO.BOARD)
+        GPIO.setup(_NIR_SERVO_PIN, GPIO.OUT)
+        _nir_servo_pwm = GPIO.PWM(_NIR_SERVO_PIN, _NIR_SERVO_FREQ)
+        _nir_servo_pwm.start(0)
+        logging.info("NIR servo PWM initialised on pin %s @ %s Hz", _NIR_SERVO_PIN, _NIR_SERVO_FREQ)
+        return True
+    except Exception as e:
+        logging.warning("NIR servo GPIO init failed: %s", e)
+        return False
 
 
 @csrf_exempt
-@require_POST
-def run_nir_servo_demo(request):
-    """POST /api/nir-servo-demo/ - runs gpio_scripts/nir_servo_pin15.py on the host."""
-    script_path = os.path.abspath(
-        os.path.join(settings.BASE_DIR, "..", "gpio_scripts", "nir_servo_pin15.py")
-    )
-    if not os.path.isfile(script_path):
-        return JsonResponse(
-            {"ok": False, "error": "nir_servo_pin15.py not found", "path": script_path},
-            status=404,
-        )
+def nir_servo_control(request):
+    """
+    POST /api/nir-servo-control/  {"duty": 0-100}
+    GET  /api/nir-servo-control/  → current duty
+    """
+    global _nir_servo_duty
 
-    if not _nir_servo_demo_lock.acquire(blocking=False):
-        return JsonResponse(
-            {"ok": False, "error": "NIR servo demo is already running; wait for it to finish."},
-            status=409,
-        )
+    if request.method == "GET":
+        return JsonResponse({"ok": True, "duty": _nir_servo_duty})
+
+    if request.method != "POST":
+        return JsonResponse({"error": "GET or POST required"}, status=405)
 
     try:
-        r = subprocess.run(
-            [sys.executable, script_path],
-            capture_output=True,
-            text=True,
-            timeout=120.0,
-            cwd=os.path.dirname(script_path),
-        )
-        out = (r.stdout or "").strip()
-        err = (r.stderr or "").strip()
-        success = r.returncode == 0
-        if len(out) > 8000:
-            out = "…\n" + out[-7990:]
-        if len(err) > 4000:
-            err = "…\n" + err[-3990:]
-        return JsonResponse({
-            "ok": success,
-            "returncode": r.returncode,
-            "stdout": out,
-            "stderr": err,
-            "message": (
-                "NIR servo routine finished."
-                if success
-                else "NIR servo script exited with a non-zero status."
-            ),
-        })
-    except subprocess.TimeoutExpired as e:
-        o = e.stdout or ""
-        er = e.stderr or ""
-        if isinstance(o, bytes):
-            o = o.decode(errors="replace")
-        if isinstance(er, bytes):
-            er = er.decode(errors="replace")
-        o, er = o.strip(), er.strip()
-        return JsonResponse(
-            {
-                "ok": False,
-                "error": "NIR servo script timed out (exceeded 120s).",
-                "stdout": o[-4000:] if len(o) > 4000 else o,
-                "stderr": er[-2000:] if len(er) > 2000 else er,
-            },
-            status=504,
-        )
-    except Exception as e:
-        logging.exception("run_nir_servo_demo failed")
-        return JsonResponse({"ok": False, "error": str(e)}, status=500)
-    finally:
-        _nir_servo_demo_lock.release()
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    raw = data.get("duty")
+    if raw is None:
+        return JsonResponse({"error": "duty field required"}, status=400)
+
+    duty = max(0, min(100, int(float(raw))))
+
+    with _nir_servo_lock:
+        if not _nir_servo_ensure_init():
+            return JsonResponse({"ok": False, "error": "GPIO init failed – is this a Jetson?"}, status=500)
+        _nir_servo_pwm.ChangeDutyCycle(_nir_angle_to_duty(duty))
+        _nir_servo_duty = duty
+
+    return JsonResponse({"ok": True, "duty": duty})
 
 
 # ----------------------------

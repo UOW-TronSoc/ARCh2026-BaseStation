@@ -10,7 +10,10 @@ router.register(r'tasks', ChecklistTaskViewSet)
 
 
 urlpatterns = [
+    # Log Viewer / ops dashboard (nested under status so it shares the same URL prefix as /api/status/)
+    path('status/health/', basestation_health_view, name='basestation_health'),
     path('status/', status_view, name='status'),
+    path('basestation-health/', basestation_health_view, name='basestation_health_legacy'),
     path('auth-status/', auth_status_view, name='auth_status'),
     path('pin-verify/', pin_verify_view, name='pin_verify'),
     path('checklist/', include(router.urls)),
@@ -26,7 +29,7 @@ urlpatterns = [
 
     path('science-feedback/', get_science_feedback, name='science-feedback'),
     path('science-control/', set_science_control, name='science-control'),
-    path('nir-servo-demo/', run_nir_servo_demo, name='nir_servo_demo'),
+    path('nir-servo-control/', nir_servo_control, name='nir_servo_control'),
 
     # path('logs/', get_rover_logs, name='get_rover_logs'),
 

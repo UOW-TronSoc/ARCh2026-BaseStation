@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import axios from "axios";
+import { postCmd, isTimeoutError } from "utils/api";
 import "./Dashboard.css";
 
 import VideoFeedCard from "components/VideoFeedCard/VideoFeedCard";
@@ -214,9 +215,9 @@ export default function Dashboard() {
 
   const sendTwistCommand = useCallback(async (payload) => {
     try {
-      await axios.post(getCommandUrl(), payload);
+      await postCmd(getCommandUrl(), payload);
     } catch (err) {
-      console.error("Failed to send drive command:", err.message);
+      if (!isTimeoutError(err)) console.error("Failed to send drive command:", err.message);
     }
   }, []);
 

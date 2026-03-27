@@ -124,16 +124,44 @@
   color: var(--card-alt-fg);
 }
 
-.Science-servo-slider {
+.Science-servo-bar-track {
+  position: relative;
   width: 100%;
-  margin-bottom: var(--space-sm);
+  height: 28px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.Science-demo-detail {
-  max-height: 80px;
-  overflow-y: auto;
-  white-space: pre-wrap;
-  word-break: break-all;
+.Science-servo-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), #e6a700);
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+  transition: width 0.06s linear;
+  min-width: 0;
+}
+
+.Science-servo-bar-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+
+kbd {
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 0.8em;
+  font-family: inherit;
 }
 
 .Science-spec-grid {

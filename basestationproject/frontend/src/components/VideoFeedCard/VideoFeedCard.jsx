@@ -3,7 +3,7 @@ import styles from "./VideoFeedCard.module.css";
 import "bootstrap/dist/js/bootstrap.bundle.min.js";
 
 const makeFrameUrl = (api, cameraName, t) =>
-  `${api}/video_feed/${encodeURIComponent(cameraName)}/?single=1&t=${t}`;
+  `${api}/video_feed/${encodeURIComponent(cameraName)}/?single=1&q=40&w=480&t=${t}`;
 
 const VideoFeedCard = ({ api }) => {
   const [cameras, setCameras] = useState([]);
@@ -11,6 +11,8 @@ const VideoFeedCard = ({ api }) => {
   const [live, setLive] = useState(false);
   const [feedEnabled, setFeedEnabled] = useState(false);
   const [displaySrc, setDisplaySrc] = useState("");
+  const [rotation, setRotation] = useState(0);
+  const rotateCW = () => setRotation((prev) => (prev + 90) % 360);
 
   // Fetch camera list from API on mount
   useEffect(() => {
@@ -85,20 +87,27 @@ const VideoFeedCard = ({ api }) => {
             src={displaySrc || undefined}
             alt="Live Camera Feed"
             className="w-100 h-100"
-            style={{ objectFit: "cover" }}
+            style={{ objectFit: "cover", transform: `rotate(${rotation}deg)` }}
             onLoad={feedEnabled ? onFrameLoad : undefined}
             onError={feedEnabled ? onFrameError : undefined}
           />
         </div>
 
-        {/* Live Badge */}
-        {live && feedEnabled && (
-          <span
-            className={`${styles.badge} badge bg-warning text-dark position-absolute top-0 start-0 mt-3 ms-3`}
+        {/* Top-left: Live badge + rotation control */}
+        <div className="position-absolute top-0 start-0 mt-3 ms-3 d-flex flex-column gap-1" style={{ zIndex: 2 }}>
+          {live && feedEnabled && (
+            <span className={`${styles.badge} badge bg-warning text-dark`}>
+              Live
+            </span>
+          )}
+          <button
+            className={`btn btn-sm btn-outline-light ${styles.rotateBtn}`}
+            onClick={rotateCW}
+            title="Rotate 90° clockwise"
           >
-            Live
-          </span>
-        )}
+            ↻
+          </button>
+        </div>
 
         {/* Camera Selector Dropdown */}
         <div className="position-absolute top-0 end-0 mt-3 me-3 dropdown">
