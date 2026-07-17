@@ -1,4 +1,5 @@
 import React from "react";
+import enableSwitchStyles from "components/EnableSwitch/EnableSwitch.module.css";
 import styles from "./SpeedControlCard.module.css";
 
 export default function SpeedControlCard({ enabled, setEnabled, controllerInfo, children }) {
@@ -6,10 +7,12 @@ export default function SpeedControlCard({ enabled, setEnabled, controllerInfo, 
     <div className="card w-100 speedCard">
       <div className={`card-header ${styles.cardHeader}`}>
         <h5 className="mb-0 header">Drive</h5>
-        <div className="form-check form-switch mt-2">
+        <div
+          className={`form-check form-switch mt-2 ${enabled ? enableSwitchStyles.panelActive : enableSwitchStyles.panelInactive}`}
+        >
           <input
             type="checkbox"
-            className={`form-check-input ${styles.switch}`}
+            className={`form-check-input ${styles.switch} ${enabled ? enableSwitchStyles.switchOn : enableSwitchStyles.switchOff}`}
             id="driveEnableSwitch"
             role="switch"
             checked={enabled}
@@ -17,9 +20,11 @@ export default function SpeedControlCard({ enabled, setEnabled, controllerInfo, 
             aria-checked={enabled}
           />
           <label className="form-check-label" htmlFor="driveEnableSwitch">
-            {enabled ? "Drive active" : "Drive disabled"}
+            <span className={enabled ? enableSwitchStyles.titleOn : enableSwitchStyles.titleOff}>
+              {enabled ? "Drive active" : "Drive off — keyboard / gamepad idle"}
+            </span>
             <span className="d-block small text-secondary mt-1">
-              When disabled, no drive commands are sent to the backend.
+              When off, no drive commands are sent to the backend.
             </span>
           </label>
         </div>

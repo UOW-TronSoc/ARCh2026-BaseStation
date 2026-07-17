@@ -52,7 +52,6 @@ import cv2
 import contextlib
 import glob
 import os
-import re
 import subprocess
 import sys
 import numpy as np
@@ -242,10 +241,18 @@ IP_CAMERAS = [
 # YUYV 800x600@20fps = ~230 Mbit/s per cam → 2 cams max.
 # MJPEG 800x600@15fps = ~15-30 Mbit/s per cam → 6+ cams possible.
 # We force MJPEG and limit FPS to avoid bandwidth starvation.
-USB_STREAM_WIDTH = 800
-USB_STREAM_HEIGHT = 600
+USB_STREAM_WIDTH = 640
+USB_STREAM_HEIGHT = 480
 USB_STREAM_FPS = 15
 USB_INTER_CAMERA_DELAY_S = 0.8  # delay between starting each USB cam to avoid driver race
+
+# Resolution presets selectable via ?preset= query param on /api/video_feed/.
+# "normal" is the default (good balance), "potato" sacrifices quality for bandwidth.
+STREAM_PRESETS = {
+    "normal": {"quality": 50, "max_width": 640},
+    "potato": {"quality": 30, "max_width": 320},
+}
+_DEFAULT_PRESET = "normal"
 
 # FFmpeg / libavformat options for OpenCV's CAP_FFMPEG — minimum RTSP latency.
 # Syntax: key;value pairs separated by | — applied via env var before VideoCapture().
@@ -280,13 +287,9 @@ _last_usb_hotplug_sync = 0.0
 _USB_HOTPLUG_MIN_INTERVAL_S = 2.5
 _usb_initial_scan_done = False
 
-# USB "valid stream" checks (see _probe_usb_cameras / _try_probe_usb_index):
-# 1) Node exists as /dev/videoN; 2) If v4l2-ctl is installed, sysfs/--all must list
-#    a "Video Capture" capability (drops metadata-only nodes). 3) OpenCV can open
-#    the device and read() at least one frame (short bounded loop — no MJPEG/800x600
-#    negotiation during probe to avoid driver QBUF churn). Full format is applied
-#    when DirectCameraSource starts. USB scan runs lazily on first camera API use
-#    so manage.py check/runserver does not block on every video node at import.
+# USB: expose /dev/videoN nodes that v4l2 reports as Video Capture with pixel formats.
+# Metadata-only nodes are omitted. Scan runs
+# lazily on first camera API use so Django import does not touch V4L.
 
 
 def _opencv_set_log_level_error():
@@ -320,39 +323,50 @@ def _silence_stderr():
         devnull.close()
 
 
+def _v4l2_node_has_video_pixel_formats(path: str) -> bool:
+    """
+    True if this V4L2 node exposes at least one pixel format for Video Capture.
+    UVC devices often expose a second node that is metadata-only (no video frames).
+    """
+    try:
+        p = subprocess.run(
+            ["v4l2-ctl", "-d", path, "--list-formats"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        if p.returncode != 0:
+            return True
+        text = p.stdout
+        i = text.find("Type: Video Capture")
+        if i < 0:
+            return False
+        for line in text[i:].splitlines()[1:]:
+            s = line.strip()
+            if not s:
+                continue
+            if s.startswith("["):
+                return True
+            if s.startswith("Type:"):
+                break
+        return False
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return True
+
+
 def _discover_usb_video_indices():
-    """Return sorted OpenCV indices for every /dev/videoN device node (Linux)."""
+    """Return sorted indices for /dev/videoN nodes that can deliver pixel video (Linux)."""
     if not sys.platform.startswith("linux"):
         return []
     indices = []
-    for path in glob.glob("/dev/video[0-9]*"):
+    for path in sorted(glob.glob("/dev/video[0-9]*")):
         base = os.path.basename(path)
         suffix = base[5:] if base.startswith("video") else ""
-        if suffix.isdigit():
+        if not suffix.isdigit():
+            continue
+        if _v4l2_node_has_video_pixel_formats(path):
             indices.append(int(suffix))
     return sorted(set(indices))
-
-
-def _v4l2_node_supports_video_capture(dev_path: str) -> bool:
-    """
-    Skip V4L2 nodes that are metadata-only (e.g. /dev/video9) so we do not register usb_N junk.
-    If v4l2-ctl is not installed, do not filter.
-    """
-    try:
-        r = subprocess.run(
-            ["v4l2-ctl", "-d", dev_path, "--all"],
-            capture_output=True,
-            text=True,
-            timeout=2.0,
-        )
-    except FileNotFoundError:
-        return True
-    except subprocess.TimeoutExpired:
-        return True
-    blob = (r.stdout or "") + (r.stderr or "")
-    if r.returncode != 0:
-        return False
-    return re.search(r"^\s*Video Capture", blob, re.MULTILINE) is not None
 
 
 def _usb_video_capture(index: int):
@@ -382,16 +396,6 @@ def _usb_video_capture(index: int):
     return cv2.VideoCapture()
 
 
-def _v4l2_warmup_grab(cap, max_attempts: int = 12, delay_s: float = 0.04) -> bool:
-    """Bounded read loop — avoids hanging startup if a node opens but never delivers frames."""
-    for _ in range(max_attempts):
-        ret, _ = cap.read()
-        if ret:
-            return True
-        time.sleep(delay_s)
-    return False
-
-
 def _v4l2_apply_low_latency(cap) -> None:
     """Best-effort V4L2 tuning; drivers may ignore BUFFERSIZE."""
     try:
@@ -400,12 +404,26 @@ def _v4l2_apply_low_latency(cap) -> None:
         pass
 
 
+def _read_usb_capture_params(cap) -> dict:
+    out = {}
+    try:
+        fourcc_int = int(cap.get(cv2.CAP_PROP_FOURCC))
+        fourcc_str = "".join(chr((fourcc_int >> (8 * i)) & 0xFF) for i in range(4))
+        out["fourcc"] = "".join(c for c in fourcc_str if 32 <= ord(c) < 127)
+        out["width"] = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        out["height"] = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        out["fps"] = round(cap.get(cv2.CAP_PROP_FPS), 1)
+    except Exception:
+        pass
+    return out
+
+
 def _configure_usb_capture(cap, log_name: str = "") -> dict:
     """
-    Request MJPEG 800×600@15fps from UVC devices (critical for multi-cam USB 2.0 bandwidth).
-    Returns dict with actual negotiated format for diagnostics.
+    Prefer MJPEG at USB_STREAM_* (bandwidth-friendly). If the device does not negotiate
+    MJPEG (e.g. ZED 2i is YUYV-only on its capture node), fall back to YUYV at a
+    driver-listed size.
     """
-    actual = {}
     try:
         cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
     except Exception:
@@ -420,17 +438,31 @@ def _configure_usb_capture(cap, log_name: str = "") -> dict:
     except Exception:
         pass
     _v4l2_apply_low_latency(cap)
+    actual = _read_usb_capture_params(cap)
 
-    # Read back actual values
-    try:
-        fourcc_int = int(cap.get(cv2.CAP_PROP_FOURCC))
-        fourcc_str = "".join(chr((fourcc_int >> (8 * i)) & 0xFF) for i in range(4))
-        actual["fourcc"] = fourcc_str
-        actual["width"] = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        actual["height"] = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        actual["fps"] = round(cap.get(cv2.CAP_PROP_FPS), 1)
-    except Exception:
-        pass
+    fc = (actual.get("fourcc") or "").upper()
+    if "MJPG" not in fc:
+        try:
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"YUYV"))
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1344)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 376)
+            cap.set(cv2.CAP_PROP_FPS, 15)
+        except Exception:
+            pass
+        _v4l2_apply_low_latency(cap)
+        actual = _read_usb_capture_params(cap)
+
+    if "MJPG" in (actual.get("fourcc") or "").upper():
+        w, h = actual.get("width", 0), actual.get("height", 0)
+        if w <= 0 or h <= 0:
+            try:
+                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 360)
+                cap.set(cv2.CAP_PROP_FPS, USB_STREAM_FPS)
+            except Exception:
+                pass
+            _v4l2_apply_low_latency(cap)
+            actual = _read_usb_capture_params(cap)
 
     if log_name and actual:
         logging.info(
@@ -442,6 +474,9 @@ def _configure_usb_capture(cap, log_name: str = "") -> dict:
             actual.get("fps", 0),
         )
     return actual
+
+
+_USB_STALE_FRAME_TIMEOUT_S = 10.0
 
 
 class DirectCameraSource:
@@ -461,73 +496,132 @@ class DirectCameraSource:
         self.source = source
         self.source_type = source_type
         self.current_frame = None
-        self.frame_version = 0  # incremented on each new frame (for cache invalidation)
+        self.frame_version = 0
+        self.last_frame_time = 0.0
         self.lock = threading.Lock()
         self._cap = None
         self._running = False
         self._thread = None
-        self.actual_format = {}  # populated after USB open: fourcc, width, height, fps
+        self._consecutive_failures = 0
+        self.actual_format = {}
+
+    def _release_cap(self):
+        """Best-effort release; clears self._cap."""
+        if self._cap is None:
+            return
+        try:
+            self._cap.release()
+        except Exception:
+            pass
+        self._cap = None
 
     def _open_capture(self):
         """Open the VideoCapture. Returns True if successful."""
+        self._release_cap()
         try:
             if self.source_type == "rtsp":
                 os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = _RTSP_FFMPEG_OPTS
                 self._cap = cv2.VideoCapture(self.source, cv2.CAP_FFMPEG)
             else:
                 self._cap = _usb_video_capture(int(self.source))
-            if self._cap and self._cap.isOpened():
-                if self.source_type == "rtsp":
-                    # CAP_PROP_BUFFERSIZE is only honoured by V4L2/DirectShow,
-                    # not CAP_FFMPEG.  Real RTSP latency reduction is handled by
-                    # _RTSP_FFMPEG_OPTS + the timed-drain loop in _capture_loop.
-                    self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-                else:
-                    self.actual_format = _configure_usb_capture(self._cap, log_name=self.name)
-                return True
         except Exception as e:
-            logging.warning(f"Failed to open {self.source_type} source {self.source}: {e}")
-        return False
+            logging.warning(
+                "OpenCV VideoCapture raised for %s (%s %s): %s",
+                self.name,
+                self.source_type,
+                self.source,
+                e,
+            )
+            self._release_cap()
+            return False
+
+        if not self._cap or not self._cap.isOpened():
+            log_fn = logging.debug if self.source_type == "usb" else logging.warning
+            log_fn(
+                "Camera %s did not open (%s %s)",
+                self.name,
+                self.source_type,
+                self.source,
+            )
+            self._release_cap()
+            return False
+
+        try:
+            if self.source_type == "rtsp":
+                self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            else:
+                self.actual_format = _configure_usb_capture(self._cap, log_name=self.name)
+        except Exception as e:
+            logging.warning("Post-open setup failed for %s: %s", self.name, e)
+            self._release_cap()
+            return False
+
+        return True
 
     def _capture_loop(self):
         """Background thread: continuously read frames."""
-        while self._running and self._cap and self._cap.isOpened():
-            if self.source_type == "rtsp":
-                # Drain stale frames from FFmpeg's internal buffer so we
-                # always display the most recent frame from the wire.
-                # grab() returns nearly instantly for buffered frames but
-                # blocks ~frame_interval when the buffer is empty.  We time
-                # each call: once it blocks past the threshold the frame is
-                # fresh and we keep it via retrieve().
-                latest_ok = False
-                for _ in range(30):
-                    t0 = time.monotonic()
-                    ok = self._cap.grab()
-                    if not ok:
-                        break
-                    latest_ok = True
-                    if (time.monotonic() - t0) > _RTSP_DRAIN_THRESHOLD_S:
-                        break
-                if latest_ok:
-                    ret, frame = self._cap.retrieve()
-                else:
-                    ret, frame = False, None
-            else:
-                ret, frame = self._cap.read()
-            if ret and frame is not None:
-                with self.lock:
-                    self.current_frame = frame.copy()
-                    self.frame_version += 1
-            else:
-                # Reconnect on failure (e.g. RTSP drop)
-                self._cap.release()
-                self._cap = None
-                if self._running and self._open_capture():
-                    continue
-                time.sleep(0.5)
-        if self._cap:
-            self._cap.release()
-            self._cap = None
+        try:
+            while self._running:
+                if not self._cap or not self._cap.isOpened():
+                    if not self._open_capture():
+                        time.sleep(2.0 if self.source_type == "usb" else 1.0)
+                        continue
+                try:
+                    if self.source_type == "rtsp":
+                        latest_ok = False
+                        for _ in range(30):
+                            t0 = time.monotonic()
+                            ok = self._cap.grab()
+                            if not ok:
+                                break
+                            latest_ok = True
+                            if (time.monotonic() - t0) > _RTSP_DRAIN_THRESHOLD_S:
+                                break
+                        if latest_ok:
+                            ret, frame = self._cap.retrieve()
+                        else:
+                            ret, frame = False, None
+                    else:
+                        ret, frame = self._cap.read()
+
+                    if ret and frame is not None:
+                        with self.lock:
+                            self.current_frame = frame.copy()
+                            self.frame_version += 1
+                            self.last_frame_time = time.monotonic()
+                        self._consecutive_failures = 0
+                    else:
+                        self._consecutive_failures += 1
+                        if self.source_type == "usb" and self._consecutive_failures < 5:
+                            time.sleep(0.05)
+                            continue
+                        self._reconnect()
+                        continue
+
+                    if self.source_type == "usb" and self.last_frame_time > 0:
+                        if (time.monotonic() - self.last_frame_time) > _USB_STALE_FRAME_TIMEOUT_S:
+                            logging.warning(
+                                "USB %s: no frame for %.0fs — forcing reconnect",
+                                self.name,
+                                _USB_STALE_FRAME_TIMEOUT_S,
+                            )
+                            self._reconnect()
+                            continue
+                except Exception as e:
+                    logging.debug("Capture frame error %s: %s", self.name, e)
+                    self._consecutive_failures += 1
+                    if self.source_type == "usb" and self._consecutive_failures < 5:
+                        time.sleep(0.05)
+                        continue
+                    self._reconnect()
+        finally:
+            self._release_cap()
+
+    def _reconnect(self):
+        """Release capture and pause before the main loop tries to open again."""
+        self._release_cap()
+        self._consecutive_failures = 0
+        time.sleep(0.5 if self.source_type == "rtsp" else 1.0)
 
     def start(self):
         """Start the capture thread."""
@@ -535,19 +629,30 @@ class DirectCameraSource:
             return
         usb_retries = 25 if self.source_type == "usb" else 1
         opened = False
-        for attempt in range(usb_retries):
-            if self._open_capture():
-                opened = True
-                break
-            if self.source_type == "usb":
-                time.sleep(0.15)
-        if not opened:
-            logging.warning(f"Camera {self.name} could not be opened.")
+        try:
+            for attempt in range(usb_retries):
+                if self._open_capture():
+                    opened = True
+                    break
+                if self.source_type == "usb":
+                    time.sleep(0.15)
+            if not opened:
+                logging.warning(
+                    "Camera %s could not be opened after %s attempt(s).",
+                    self.name,
+                    usb_retries,
+                )
+                return
+            self._running = True
+            self._thread = threading.Thread(target=self._capture_loop, daemon=True)
+            self._thread.start()
+        except Exception as e:
+            logging.exception("Camera %s failed to start: %s", self.name, e)
+            self._running = False
+            self._release_cap()
+            self._thread = None
             return
-        self._running = True
-        self._thread = threading.Thread(target=self._capture_loop, daemon=True)
-        self._thread.start()
-        logging.info(f"Camera {self.name} ({self.source_type}) started.")
+        logging.info("Camera %s (%s) started.", self.name, self.source_type)
 
     def stop(self):
         """Stop the capture thread."""
@@ -557,58 +662,12 @@ class DirectCameraSource:
             self._thread = None
 
 
-_USB_PROBE_TIMEOUT_S = 6
-
-
-def _try_probe_usb_index(idx: int):
-    """
-    Quick validation: device opens, we set MJPEG (the format we'll actually stream),
-    and get at least one frame. Runs in a sub-thread with a hard timeout so a stuck
-    V4L2 device cannot block the scan indefinitely.
-    """
-    result = [None]
-
-    def _probe():
-        cap = _usb_video_capture(idx)
-        try:
-            if not cap.isOpened():
-                return
-            _configure_usb_capture(cap, log_name=f"probe usb_{idx}")
-            if not _v4l2_warmup_grab(cap):
-                logging.warning("USB probe usb_%s: opened but no frames", idx)
-                return
-            result[0] = {"name": f"usb_{idx}", "index": idx}
-        finally:
-            cap.release()
-
-    t = threading.Thread(target=_probe, daemon=True, name=f"probe-usb-{idx}")
-    t.start()
-    t.join(timeout=_USB_PROBE_TIMEOUT_S)
-    if t.is_alive():
-        logging.warning("USB probe usb_%s timed out after %ss — skipping", idx, _USB_PROBE_TIMEOUT_S)
-        return None
-    return result[0]
-
-
 def _probe_usb_cameras():
     """
-    Return {name, index} for each usable USB capture device.
-    Filters: v4l2-ctl Video Capture line (when v4l2-ctl exists), then OpenCV open + short read().
-    Probes are serialized with short delays to avoid hammering USB bus.
+    Return {name, index} for each /dev/videoN that exposes Video Capture pixel formats.
+    Metadata-only UVC nodes (e.g. second interface) are skipped.
     """
-    found = []
-    indices = _discover_usb_video_indices()
-    for i, idx in enumerate(indices):
-        dev = f"/dev/video{idx}"
-        if sys.platform.startswith("linux") and not _v4l2_node_supports_video_capture(dev):
-            logging.debug("USB %s skipped (no Video Capture cap)", dev)
-            continue
-        cfg = _try_probe_usb_index(idx)
-        if cfg:
-            found.append(cfg)
-        if i < len(indices) - 1:
-            time.sleep(0.3)  # brief pause between probes
-    return found
+    return [{"name": f"usb_{idx}", "index": idx} for idx in _discover_usb_video_indices()]
 
 
 def _sync_new_usb_cameras():
@@ -619,7 +678,6 @@ def _sync_new_usb_cameras():
     now = time.monotonic()
     if now - _last_usb_hotplug_sync < _USB_HOTPLUG_MIN_INTERVAL_S:
         return
-    _last_usb_hotplug_sync = now
     if not _usb_camera_registry_lock.acquire(timeout=0.5):
         return
     try:
@@ -628,29 +686,29 @@ def _sync_new_usb_cameras():
             name = f"usb_{idx}"
             if name in camera_nodes:
                 continue
-            dev = f"/dev/video{idx}"
-            if sys.platform.startswith("linux") and not _v4l2_node_supports_video_capture(dev):
-                continue
-            cfg = _try_probe_usb_index(idx)
-            if not cfg:
-                continue
-            new_cams.append(cfg)
-        for i, cfg in enumerate(new_cams):
-            name = cfg["name"]
-            src = DirectCameraSource(name, cfg["index"], source_type="usb")
-            src.start()
-            camera_nodes[name] = src
-            logging.info("Registered new USB camera %s (index %s)", name, cfg["index"])
-            if i < len(new_cams) - 1:
-                time.sleep(USB_INTER_CAMERA_DELAY_S)
+            new_cams.append({"name": name, "index": idx})
     finally:
         _usb_camera_registry_lock.release()
+
+    _last_usb_hotplug_sync = time.monotonic()
+
+    for i, cfg in enumerate(new_cams):
+        name = cfg["name"]
+        with _usb_camera_registry_lock:
+            if name in camera_nodes:
+                continue
+            src = DirectCameraSource(name, cfg["index"], source_type="usb")
+            camera_nodes[name] = src
+        src.start()
+        logging.info("Registered new USB camera %s (index %s)", name, cfg["index"])
+        if i < len(new_cams) - 1:
+            time.sleep(USB_INTER_CAMERA_DELAY_S)
 
 
 def initialize_cameras():
     """
     Start IP (RTSP) cameras only. USB is registered lazily on first camera API call
-    so Django import / system checks are not blocked by V4L probing.
+    so Django import / system checks are not blocked by V4L enumeration.
     """
     camera_sources = {}
 
@@ -671,25 +729,33 @@ _usb_scan_thread = None
 
 
 def _do_usb_scan():
-    """Background worker: probe /dev/video* and register DirectCameraSources."""
+    """Background worker: list /dev/video* and register DirectCameraSources for each."""
     global _usb_initial_scan_done, _last_usb_hotplug_sync
     try:
         with _usb_camera_registry_lock:
             if _usb_initial_scan_done:
                 return
             usb_cams = _probe_usb_cameras()
-            for i, cfg in enumerate(usb_cams):
-                name = cfg["name"]
+            # Mark scan complete before OpenCV start() — start() can block for seconds per
+            # device; holding the lock or leaving _usb_initial_scan_done False prevents
+            # _sync_new_usb_cameras() from ever registering later /dev/video* nodes.
+            _usb_initial_scan_done = True
+            _last_usb_hotplug_sync = time.monotonic()
+
+        for i, cfg in enumerate(usb_cams):
+            name = cfg["name"]
+            with _usb_camera_registry_lock:
                 if name in camera_nodes:
                     continue
                 src = DirectCameraSource(name, cfg["index"], source_type="usb")
-                src.start()
                 camera_nodes[name] = src
-                if i < len(usb_cams) - 1:
-                    time.sleep(USB_INTER_CAMERA_DELAY_S)
-            _usb_initial_scan_done = True
-            _last_usb_hotplug_sync = time.monotonic()
-            logging.info("USB cameras registered: %s", [k for k in camera_nodes if k.startswith("usb_")])
+            src.start()
+            if i < len(usb_cams) - 1:
+                time.sleep(USB_INTER_CAMERA_DELAY_S)
+
+        with _usb_camera_registry_lock:
+            registered = [k for k in camera_nodes if k.startswith("usb_")]
+        logging.info("USB cameras registered: %s", registered)
     except Exception:
         logging.exception("USB camera scan failed")
 
@@ -724,6 +790,8 @@ def get_camera_list(request):
     return JsonResponse({
         "cameras": names,
         "usb_device_paths": usb_device_paths,
+        "presets": {k: {"quality": v["quality"], "max_width": v["max_width"]} for k, v in STREAM_PRESETS.items()},
+        "default_preset": _DEFAULT_PRESET,
     })
 
 
@@ -743,11 +811,13 @@ def camera_debug(request):
         with src.lock:
             has_frame = src.current_frame is not None
             frame_shape = list(src.current_frame.shape) if has_frame else None
+        last_frame_age = round(time.monotonic() - src.last_frame_time, 1) if src.last_frame_time > 0 else None
         entry = {
             "has_frame": has_frame,
             "frame_shape": frame_shape,
             "source_type": src.source_type,
             "source": str(src.source) if src.source_type == "rtsp" else src.source,
+            "last_frame_age_s": last_frame_age,
         }
         if src.source_type == "usb":
             dev = _usb_device_path_for_name(name)
@@ -916,14 +986,22 @@ def mjpeg_stream(request, camera_name):
 
     # Single-frame mode: return one JPEG with compression (smaller = faster)
     if request.GET.get("single"):
+        preset_name = request.GET.get("preset", "").lower()
+        preset = STREAM_PRESETS.get(preset_name)
+        if preset:
+            default_q = preset["quality"]
+            default_w = preset["max_width"]
+        else:
+            default_q = _DEFAULT_JPEG_QUALITY
+            default_w = _DEFAULT_MAX_WIDTH
         try:
-            quality = min(95, max(30, int(request.GET.get("q", _DEFAULT_JPEG_QUALITY))))
+            quality = min(95, max(10, int(request.GET.get("q", default_q))))
         except (ValueError, TypeError):
-            quality = _DEFAULT_JPEG_QUALITY
+            quality = default_q
         try:
-            max_width = min(1920, max(160, int(request.GET.get("w", _DEFAULT_MAX_WIDTH))))
+            max_width = min(1920, max(160, int(request.GET.get("w", default_w))))
         except (ValueError, TypeError):
-            max_width = _DEFAULT_MAX_WIDTH
+            max_width = default_w
         with node.lock:
             frame = node.current_frame.copy() if node.current_frame is not None else None
             frame_version = node.frame_version

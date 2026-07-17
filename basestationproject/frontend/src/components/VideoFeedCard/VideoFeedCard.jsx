@@ -1,9 +1,9 @@
-import React, { useEffect, useState, useRef, useCallback, memo } from "react";
+import React, { useEffect, useState, useCallback, memo } from "react";
 import styles from "./VideoFeedCard.module.css";
 import "bootstrap/dist/js/bootstrap.bundle.min.js";
 
-const makeFrameUrl = (api, cameraName, t) =>
-  `${api}/video_feed/${encodeURIComponent(cameraName)}/?single=1&q=40&w=480&t=${t}`;
+const makeFrameUrl = (api, cameraName, preset, t) =>
+  `${api}/video_feed/${encodeURIComponent(cameraName)}/?single=1&preset=${preset}&t=${t}`;
 
 const VideoFeedCard = ({ api }) => {
   const [cameras, setCameras] = useState([]);
@@ -13,6 +13,8 @@ const VideoFeedCard = ({ api }) => {
   const [displaySrc, setDisplaySrc] = useState("");
   const [rotation, setRotation] = useState(0);
   const rotateCW = () => setRotation((prev) => (prev + 90) % 360);
+  const [preset, setPreset] = useState("normal");
+  const cyclePreset = () => setPreset((p) => (p === "normal" ? "potato" : "normal"));
 
   // Fetch camera list from API on mount
   useEffect(() => {
@@ -35,44 +37,25 @@ const VideoFeedCard = ({ api }) => {
     }
   }, [cameras, selectedCamera]);
 
-  // onLoad-driven chain: request next frame only when current loads (avoids aborting requests)
   const requestNextFrame = useCallback(() => {
     if (feedEnabled && selectedCamera) {
-      setDisplaySrc(makeFrameUrl(api, selectedCamera, Date.now()));
+      setDisplaySrc(makeFrameUrl(api, selectedCamera, preset, Date.now()));
     }
-  }, [api, selectedCamera, feedEnabled]);
+  }, [api, selectedCamera, feedEnabled, preset]);
 
   useEffect(() => {
     if (feedEnabled && selectedCamera) {
       setLive(true);
-      setDisplaySrc(makeFrameUrl(api, selectedCamera, Date.now()));
+      setDisplaySrc(makeFrameUrl(api, selectedCamera, preset, Date.now()));
     } else {
       setLive(false);
       setDisplaySrc("");
     }
-  }, [api, selectedCamera, feedEnabled]);
-
-  // Realtime FPS logging
-  const fpsRef = useRef({ lastTs: 0, deltas: [], logTs: 0 });
-  useEffect(() => {
-    if (!feedEnabled) fpsRef.current = { lastTs: 0, deltas: [], logTs: 0 };
-  }, [feedEnabled]);
+  }, [api, selectedCamera, feedEnabled, preset]);
 
   const onFrameLoad = useCallback(() => {
-    const now = performance.now();
-    const { lastTs, deltas, logTs } = fpsRef.current;
-    if (lastTs > 0) {
-      deltas.push(1000 / (now - lastTs));
-      if (deltas.length > 10) deltas.shift();
-      const fps = deltas.reduce((a, b) => a + b, 0) / deltas.length;
-      if (now - logTs >= 1000) {
-        console.log(`[VideoFeedCard] ${selectedCamera} FPS: ${fps.toFixed(1)}`);
-        fpsRef.current.logTs = now;
-      }
-    }
-    fpsRef.current.lastTs = now;
     requestNextFrame();
-  }, [selectedCamera, requestNextFrame]);
+  }, [requestNextFrame]);
 
   const onFrameError = useCallback(() => {
     requestNextFrame();
@@ -135,14 +118,23 @@ const VideoFeedCard = ({ api }) => {
           </ul>
         </div>
 
-        {/* Start/Stop Feed Button */}
-        <div className="position-absolute bottom-0 start-0 mb-3 ms-3">
+        {/* Start/Stop Feed + Quality preset */}
+        <div className="position-absolute bottom-0 start-0 mb-3 ms-3 d-flex gap-1">
           <button
             className="btn btn-sm btn-outline-light"
             onClick={() => setFeedEnabled(prev => !prev)}
           >
             {feedEnabled ? "Stop Feed" : "Start Feed"}
           </button>
+          {feedEnabled && (
+            <button
+              className={`btn btn-sm ${preset === "potato" ? "btn-danger" : "btn-outline-info"}`}
+              onClick={cyclePreset}
+              title={preset === "potato" ? "Potato (240p)" : "Normal (640p)"}
+            >
+              {preset === "potato" ? "🥔" : "📷"}
+            </button>
+          )}
         </div>
       </div>
     </div>

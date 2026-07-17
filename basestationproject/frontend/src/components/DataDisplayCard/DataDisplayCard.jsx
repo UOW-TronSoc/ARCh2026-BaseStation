@@ -1,7 +1,7 @@
 import React from "react";
 import styles from "./DataDisplayCard.module.css";
 
-export default function DataDisplayCard({ battery, pitch, roll, linkLatencyMs, linkClientIp }) {
+export default function DataDisplayCard({ battery, linkLatencyMs, linkClientIp }) {
   const safeNumber = (value, fractionDigits = 1) =>
     typeof value === "number" && !Number.isNaN(value)
       ? value.toFixed(fractionDigits)
@@ -43,19 +43,6 @@ export default function DataDisplayCard({ battery, pitch, roll, linkLatencyMs, l
         ) : (
           <div className={styles.measuring}>Measuring…</div>
         )}
-      </section>
-
-      {/* Orientation */}
-      <section className={styles.section}>
-        <h6 className={styles.sectionTitle}>Orientation</h6>
-        <div className={styles.row}>
-          <span className={styles.rowLabel}>Pitch</span>
-          <span className={styles.rowValue}>{safeNumber(pitch, 2)}°</span>
-        </div>
-        <div className={styles.row}>
-          <span className={styles.rowLabel}>Roll</span>
-          <span className={styles.rowValue}>{safeNumber(roll, 2)}°</span>
-        </div>
       </section>
 
       {/* Battery — compact grid */}

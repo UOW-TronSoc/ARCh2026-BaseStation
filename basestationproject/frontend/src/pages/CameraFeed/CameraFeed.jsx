@@ -13,24 +13,25 @@ const API_BASE = import.meta.env.VITE_API_URL || getApiBase();
  * Hook that binds MJPEG stream URLs to THREE.Textures.
  * Uses native MJPEG streaming (one connection per camera, browser updates image continuously).
  */
-function useMJPEGTextures(cameraNames) {
+function useMJPEGTextures(cameraNames, cameraPresets) {
   const texturesRef = useRef([]);
 
   useEffect(() => {
     if (!cameraNames.length) return;
     cameraNames.forEach((name, i) => {
+      const preset = cameraPresets[i] ?? "normal";
       const img = new Image();
       img.crossOrigin = "Anonymous";
       const tex = new THREE.Texture(img);
       tex.minFilter = THREE.LinearFilter;
       tex.magFilter = THREE.LinearFilter;
       texturesRef.current[i] = tex;
-      img.src = `${API_BASE}/video_feed/${encodeURIComponent(name)}/`;
+      img.src = `${API_BASE}/video_feed/${encodeURIComponent(name)}/?preset=${preset}`;
     });
     return () => {
       texturesRef.current.forEach((tex) => tex?.image && (tex.image.src = ""));
     };
-  }, [cameraNames.join(",")]);
+  }, [cameraNames.join(","), cameraPresets.slice(0, cameraNames.length).join(",")]);
 
   useFrame(() => {
     texturesRef.current.forEach((tex) => {
@@ -47,9 +48,10 @@ function useMJPEGTextures(cameraNames) {
  * Renders planes in a circle, each textured with its MJPEG feed.
  * Uses first 4 cameras from the list for the ring.
  */
-function CamerasRing({ cameraNames }) {
+function CamerasRing({ cameraNames, cameraPresets }) {
   const ringCameras = cameraNames.slice(0, 4);
-  const textures = useMJPEGTextures(ringCameras);
+  const ringPresets = cameraPresets.slice(0, ringCameras.length);
+  const textures = useMJPEGTextures(ringCameras, ringPresets);
 
   return (
     <group>
@@ -132,6 +134,131 @@ function canExpandTo(slotIndex, gridSlots, newColSpan, newRowSpan) {
   return true;
 }
 
+/** Backend query values; UI labels are HD / TS */
+const PRESET_HD = "normal";
+const PRESET_TS = "potato";
+
+const LAYOUT_PRESET_STORAGE_KEY = "cameraFeed.layoutPresets.v1";
+const NUM_LAYOUT_PRESETS = 5;
+
+function loadAllLayoutPresets() {
+  try {
+    const raw = localStorage.getItem(LAYOUT_PRESET_STORAGE_KEY);
+    if (!raw) return Array(NUM_LAYOUT_PRESETS).fill(null);
+    const parsed = JSON.parse(raw);
+    return Array.from({ length: NUM_LAYOUT_PRESETS }, (_, i) => parsed[i] ?? null);
+  } catch {
+    return Array(NUM_LAYOUT_PRESETS).fill(null);
+  }
+}
+
+function saveAllLayoutPresets(arr) {
+  try {
+    const obj = {};
+    arr.forEach((v, i) => {
+      if (v != null) obj[i] = v;
+    });
+    localStorage.setItem(LAYOUT_PRESET_STORAGE_KEY, JSON.stringify(obj));
+  } catch {
+    /* ignore quota */
+  }
+}
+
+function buildLayoutSnapshot(
+  cameras,
+  gridSlots,
+  rotations,
+  cameraPresets,
+  activeCameras,
+  gridMode
+) {
+  return {
+    v: 1,
+    cameraOrder: [...cameras],
+    grid: gridSlots.map((item) => {
+      if (!item) return null;
+      const name = cameras[item.cameraIndex];
+      if (!name) return null;
+      return {
+        cameraName: name,
+        colSpan: item.colSpan ?? 1,
+        rowSpan: item.rowSpan ?? 1,
+      };
+    }),
+    rotationsByName: Object.fromEntries(
+      cameras.map((n, i) => [n, rotations[i] ?? 0]).filter(([, deg]) => deg % 360 !== 0)
+    ),
+    cameraPresets: [...cameraPresets],
+    activeCameras: [...activeCameras],
+    gridMode: !!gridMode,
+  };
+}
+
+function dedupeGridSlots(gridSlots) {
+  const seen = new Set();
+  const out = [...gridSlots];
+  for (let i = 0; i < out.length; i++) {
+    const it = out[i];
+    if (!it) continue;
+    if (seen.has(it.cameraIndex)) out[i] = null;
+    else seen.add(it.cameraIndex);
+  }
+  return out;
+}
+
+function applyLayoutSnapshot(snapshot, cameras) {
+  if (!snapshot || snapshot.v !== 1 || !cameras.length) return null;
+  const {
+    cameraOrder,
+    grid,
+    rotationsByName,
+    cameraPresets: savedPresets,
+    activeCameras: savedActive,
+    gridMode,
+  } = snapshot;
+  const nameToSavedIdx = Object.fromEntries(
+    (cameraOrder || []).map((n, i) => [n, i])
+  );
+  const nextPresets = cameras.map((n, i) => {
+    const j = nameToSavedIdx[n];
+    return j !== undefined && savedPresets[j] !== undefined ? savedPresets[j] : PRESET_HD;
+  });
+  const nextActive = cameras.map((n, i) => {
+    const j = nameToSavedIdx[n];
+    return j !== undefined ? !!savedActive[j] : false;
+  });
+  const nextRot = {};
+  cameras.forEach((n, i) => {
+    const deg = rotationsByName?.[n];
+    if (deg != null && deg % 360 !== 0) nextRot[i] = deg;
+  });
+  const nextGrid = defaultGridSlots();
+  const g = grid || [];
+  for (let i = 0; i < GRID_SIZE; i++) {
+    const cell = g[i];
+    if (!cell?.cameraName) {
+      nextGrid[i] = null;
+      continue;
+    }
+    const idx = cameras.indexOf(cell.cameraName);
+    if (idx < 0) nextGrid[i] = null;
+    else {
+      nextGrid[i] = {
+        cameraIndex: idx,
+        colSpan: cell.colSpan ?? 1,
+        rowSpan: cell.rowSpan ?? 1,
+      };
+    }
+  }
+  return {
+    gridSlots: dedupeGridSlots(nextGrid),
+    rotations: nextRot,
+    cameraPresets: nextPresets,
+    activeCameras: nextActive,
+    gridMode: !!gridMode,
+  };
+}
+
 const CameraFeed = () => {
   const [cameras, setCameras] = useState([]);
   /** Maps api id e.g. usb_8 -> "/dev/video8" (from backend discovery, not a UI slot). */
@@ -140,11 +267,128 @@ const CameraFeed = () => {
   const [imageSrcs, setImageSrcs] = useState([]);
   const [focusedCameras, setFocusedCameras] = useState([]);
   const [showBirdsEye, setShowBirdsEye] = useState(false);
-  const [gridMode, setGridMode] = useState(false);
+  const [gridMode, setGridMode] = useState(true);
   const [gridSlots, setGridSlots] = useState(defaultGridSlots);
+  const [layoutPresetSlot, setLayoutPresetSlot] = useState(0);
+  const [layoutPresetHint, setLayoutPresetHint] = useState("");
   const [rotations, setRotations] = useState({});
   const rotateCamera = (id) =>
     setRotations((prev) => ({ ...prev, [id]: ((prev[id] || 0) + 90) % 360 }));
+  /** Per-camera stream quality; indices align with `cameras` */
+  const [cameraPresets, setCameraPresets] = useState([]);
+  const cyclePresetFor = (cameraIndex) => {
+    setCameraPresets((prev) => {
+      const next = [...prev];
+      if (cameraIndex < 0 || cameraIndex >= next.length) return prev;
+      next[cameraIndex] = next[cameraIndex] === PRESET_HD ? PRESET_TS : PRESET_HD;
+      return next;
+    });
+  };
+  const presetLabel = (p) => (p === PRESET_TS ? "TS" : "HD");
+
+  const presetBtnClass = (p) =>
+    (p ?? PRESET_HD) === PRESET_TS ? "btn-secondary" : "btn-outline-warning";
+
+  const hintTimerRef = useRef(null);
+  const flashLayoutHint = useCallback((msg) => {
+    if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
+    setLayoutPresetHint(msg);
+    hintTimerRef.current = setTimeout(() => {
+      setLayoutPresetHint("");
+      hintTimerRef.current = null;
+    }, 2500);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
+    },
+    []
+  );
+
+  const flashLayoutHintRef = useRef(flashLayoutHint);
+  useEffect(() => {
+    flashLayoutHintRef.current = flashLayoutHint;
+  }, [flashLayoutHint]);
+
+  const camerasRef = useRef(cameras);
+  const gridSlotsRef = useRef(gridSlots);
+  const rotationsRef = useRef(rotations);
+  const cameraPresetsRef = useRef(cameraPresets);
+  const activeCamerasRef = useRef(activeCameras);
+  const gridModeRef = useRef(gridMode);
+  const layoutPresetSlotRef = useRef(layoutPresetSlot);
+  useEffect(() => {
+    camerasRef.current = cameras;
+    gridSlotsRef.current = gridSlots;
+    rotationsRef.current = rotations;
+    cameraPresetsRef.current = cameraPresets;
+    activeCamerasRef.current = activeCameras;
+    gridModeRef.current = gridMode;
+    layoutPresetSlotRef.current = layoutPresetSlot;
+  }, [cameras, gridSlots, rotations, cameraPresets, activeCameras, gridMode, layoutPresetSlot]);
+
+  const camerasKey = cameras.join(",");
+  useEffect(() => {
+    if (!cameras.length) return;
+    const all = loadAllLayoutPresets();
+    const snap = all[layoutPresetSlot];
+    if (!snap) {
+      setGridSlots(defaultGridSlots());
+      setRotations({});
+      return;
+    }
+    const applied = applyLayoutSnapshot(snap, cameras);
+    if (!applied) return;
+    setGridSlots(applied.gridSlots);
+    setRotations(applied.rotations);
+    setCameraPresets(applied.cameraPresets);
+    setActiveCameras(applied.activeCameras);
+    setGridMode(applied.gridMode);
+  }, [layoutPresetSlot, camerasKey]);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.defaultPrevented) return;
+      const t = e.target;
+      if (
+        t?.tagName === "INPUT" ||
+        t?.tagName === "TEXTAREA" ||
+        t?.tagName === "SELECT" ||
+        t?.isContentEditable
+      ) {
+        return;
+      }
+      const k = e.key.toLowerCase();
+      if (k !== "c" && k !== "d") return;
+      if (!camerasRef.current.length) return;
+      e.preventDefault();
+      const slot = layoutPresetSlotRef.current;
+      if (k === "c") {
+        const snap = buildLayoutSnapshot(
+          camerasRef.current,
+          gridSlotsRef.current,
+          rotationsRef.current,
+          cameraPresetsRef.current,
+          activeCamerasRef.current,
+          gridModeRef.current
+        );
+        const all = loadAllLayoutPresets();
+        all[slot] = snap;
+        saveAllLayoutPresets(all);
+        flashLayoutHintRef.current(`Saved camera layout to preset ${slot + 1} (C)`);
+      } else {
+        const all = loadAllLayoutPresets();
+        all[slot] = null;
+        saveAllLayoutPresets(all);
+        setGridSlots(defaultGridSlots());
+        setRotations({});
+        flashLayoutHintRef.current(`Cleared preset ${slot + 1} (D)`);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // Poll /api/cameras/ continuously so newly plugged USB cameras appear without a restart.
   // The backend's _sync_new_usb_cameras() probes /dev/video* on each call, so polling here
@@ -177,6 +421,12 @@ const CameraFeed = () => {
               return [...prev, ...Array(list.length - prev.length).fill("")];
             return prev.slice(0, list.length);
           });
+          setCameraPresets((prev) => {
+            if (prev.length === list.length) return prev;
+            if (list.length > prev.length)
+              return [...prev, ...Array(list.length - prev.length).fill(PRESET_HD)];
+            return prev.slice(0, list.length);
+          });
           pollTimer = setTimeout(fetchCameras, POLL_INTERVAL_MS);
         })
         .catch(() => {
@@ -191,23 +441,24 @@ const CameraFeed = () => {
     return () => { cancelled = true; clearTimeout(pollTimer); };
   }, []);
 
-  // 2D: onLoad-driven chain (like IP camera admin)—request next frame when current loads
-  const makeFrameUrl = (cameraName, t) =>
-    `${API_BASE}/video_feed/${encodeURIComponent(cameraName)}/?single=1&q=40&w=480&t=${t}`;
+  const makeFrameUrl = (cameraName, cameraIndex, t) => {
+    const pr = cameraPresets[cameraIndex] ?? PRESET_HD;
+    return `${API_BASE}/video_feed/${encodeURIComponent(cameraName)}/?single=1&preset=${pr}&t=${t}`;
+  };
   useEffect(() => {
     if (!cameras.length) return;
     setImageSrcs(
       cameras.map((name, idx) =>
-        activeCameras[idx] ? makeFrameUrl(name, Date.now()) : ""
+        activeCameras[idx] ? makeFrameUrl(name, idx, Date.now()) : ""
       )
     );
-  }, [cameras, activeCameras]);
+  }, [cameras, activeCameras, cameraPresets]);
 
   const requestNextFrame = (cameraId) => {
     if (!activeCameras[cameraId] || !cameras[cameraId]) return;
     setImageSrcs((prev) => {
       const next = [...prev];
-      next[cameraId] = makeFrameUrl(cameras[cameraId], Date.now());
+      next[cameraId] = makeFrameUrl(cameras[cameraId], cameraId, Date.now());
       return next;
     });
   };
@@ -244,23 +495,7 @@ const CameraFeed = () => {
     return name.charAt(0).toUpperCase() + name.slice(1);
   };
 
-  // Realtime FPS logging + onLoad-driven next frame (like IP camera admin)
-  const fpsRef = useRef({});
   const onFrameLoad = (cameraId) => {
-    const name = cameras[cameraId];
-    const now = performance.now();
-    const track = fpsRef.current[cameraId] ?? { lastTs: 0, deltas: [], logTs: 0 };
-    if (track.lastTs > 0) {
-      track.deltas.push(1000 / (now - track.lastTs));
-      if (track.deltas.length > 10) track.deltas.shift();
-      const fps = track.deltas.reduce((a, b) => a + b, 0) / track.deltas.length;
-      if (now - track.logTs >= 1000) {
-        console.log(`[CameraFeed] ${displayName(name)} FPS: ${fps.toFixed(1)}`);
-        track.logTs = now;
-      }
-    }
-    track.lastTs = now;
-    fpsRef.current[cameraId] = track;
     requestNextFrame(cameraId);
   };
 
@@ -412,21 +647,47 @@ const CameraFeed = () => {
   return (
     <div className="cameraPage">
       <div className="container-fluid px-3 main-container text-white">
-      <div className="cameraPageHeader">
-        <h2 className="mb-0">Live Camera Feeds</h2>
-        <div className="cameraPageHeaderButtons">
-          <button
-            className={`btn btn-sm ${gridMode ? "btn-warning" : "btn-outline-warning"}`}
-            onClick={() => setGridMode((v) => !v)}
-          >
-            Grid Mode
-          </button>
-          <button
-            className="btn btn-warning btn-sm"
-            onClick={() => setShowBirdsEye((v) => !v)}
-          >
-            {showBirdsEye ? "Exit 3D View" : "Bird's-Eye"}
-          </button>
+      <div className="cameraPageHeaderBlock">
+        <div className="cameraPageHeader">
+          <h2 className="mb-0">Live Camera Feeds</h2>
+          <div className="cameraPageHeaderButtons">
+            <button
+              className={`btn btn-sm ${gridMode ? "btn-warning" : "btn-outline-warning"}`}
+              onClick={() => setGridMode((v) => !v)}
+            >
+              Grid Mode
+            </button>
+            <button
+              className="btn btn-warning btn-sm"
+              onClick={() => setShowBirdsEye((v) => !v)}
+            >
+              {showBirdsEye ? "Exit 3D View" : "Bird's-Eye"}
+            </button>
+          </div>
+        </div>
+        <div className="cameraLayoutPresetBar">
+          <span className="cameraLayoutPresetLabel">Camera layout preset</span>
+          <div className="cameraLayoutPresetSlots" role="group" aria-label="Layout preset slot">
+            {Array.from({ length: NUM_LAYOUT_PRESETS }, (_, i) => (
+              <button
+                key={i}
+                type="button"
+                className={`btn btn-sm ${layoutPresetSlot === i ? "btn-warning" : "btn-outline-secondary"}`}
+                onClick={() => setLayoutPresetSlot(i)}
+              >
+                {i + 1}
+              </button>
+            ))}
+          </div>
+          <span className="cameraLayoutPresetKbd text-muted small">
+            <kbd className="text-dark bg-light">C</kbd> save ·{" "}
+            <kbd className="text-dark bg-light">D</kbd> clear slot
+          </span>
+          {layoutPresetHint ? (
+            <span className="cameraLayoutPresetToast" role="status">
+              {layoutPresetHint}
+            </span>
+          ) : null}
         </div>
       </div>
 
@@ -441,7 +702,7 @@ const CameraFeed = () => {
             <ambientLight intensity={0.6} />
             <directionalLight position={[5, 10, 5]} intensity={0.5} />
             <Suspense fallback={<Html>Loading feeds...</Html>}>
-              <CamerasRing cameraNames={cameras} />
+              <CamerasRing cameraNames={cameras} cameraPresets={cameraPresets} />
             </Suspense>
             <OrbitControls enablePan={false} enableZoom zoomSpeed={0.6} />
           </Canvas>
@@ -485,13 +746,23 @@ const CameraFeed = () => {
                           >
                             <div className="cameraGridSlotHeader">
                               <span>{displayName(cameras[cameraIndex])}</span>
-                              <button
-                                className="btn btn-sm btn-outline-danger"
-                                onClick={(e) => { e.stopPropagation(); clearSlot(slotIndex); }}
-                                aria-label="Clear slot"
-                              >
-                                ×
-                              </button>
+                              <div className="cameraGridSlotHeaderActions">
+                                <button
+                                  type="button"
+                                  className={`btn btn-sm cameraPresetBtn ${presetBtnClass(cameraPresets[cameraIndex])}`}
+                                  onClick={(e) => { e.stopPropagation(); cyclePresetFor(cameraIndex); }}
+                                  title="HD: higher quality. TS: thumbnail stream, lower bandwidth."
+                                >
+                                  {presetLabel(cameraPresets[cameraIndex] ?? PRESET_HD)}
+                                </button>
+                                <button
+                                  className="btn btn-sm btn-outline-danger"
+                                  onClick={(e) => { e.stopPropagation(); clearSlot(slotIndex); }}
+                                  aria-label="Clear slot"
+                                >
+                                  ×
+                                </button>
+                              </div>
                             </div>
                             {activeCameras[cameraIndex] && (
                               <div className="cameraGridSlotView">
@@ -533,12 +804,22 @@ const CameraFeed = () => {
                   <div key={id} className="cameraTile">
                     <div className="cameraTileHeader">
                       <span className="cameraTileName">{displayName(cameras[id])}</span>
-                      <button
-                        className={`btn btn-sm ${activeCameras[id] ? "btn-danger" : "btn-success"}`}
-                        onClick={() => toggleCamera(id)}
-                      >
-                        {activeCameras[id] ? "Off" : "On"}
-                      </button>
+                      <div className="cameraTileHeaderActions">
+                        <button
+                          type="button"
+                          className={`btn btn-sm cameraPresetBtn ${presetBtnClass(cameraPresets[id])}`}
+                          onClick={() => cyclePresetFor(id)}
+                          title="HD: higher quality. TS: thumbnail stream, lower bandwidth."
+                        >
+                          {presetLabel(cameraPresets[id] ?? PRESET_HD)}
+                        </button>
+                        <button
+                          className={`btn btn-sm ${activeCameras[id] ? "btn-danger" : "btn-success"}`}
+                          onClick={() => toggleCamera(id)}
+                        >
+                          {activeCameras[id] ? "Off" : "On"}
+                        </button>
+                      </div>
                     </div>
                     {activeCameras[id] && (
                       <div className="cameraTileView" onClick={() => toggleFocus(id)}>
@@ -582,6 +863,14 @@ const CameraFeed = () => {
                       onClick={() => toggleCamera(id)}
                     >
                       {displayName(cameras[id])}: {activeCameras[id] ? "Off" : "On"}
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn btn-sm cameraPresetBtn mb-1 ${presetBtnClass(cameraPresets[id])}`}
+                      onClick={(e) => { e.stopPropagation(); cyclePresetFor(id); }}
+                      title="HD: higher quality. TS: thumbnail stream, lower bandwidth."
+                    >
+                      {presetLabel(cameraPresets[id] ?? PRESET_HD)}
                     </button>
                     {activeCameras[id] && (
                       <div
